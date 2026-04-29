@@ -238,7 +238,9 @@ llm_kwargs.update(rocm_determinism_kwargs)
 llm = ray.remote(
     num_cpus=0,
     num_gpus=0,
-)(MyLLM).remote(**llm_kwargs)
+)(
+    MyLLM
+).remote(**llm_kwargs)
 
 PROMPTS = [
     "The president of the United States is",
@@ -370,7 +372,9 @@ llm_v2_kwargs.update(rocm_determinism_kwargs)
 llm_v2 = ray.remote(
     num_cpus=0,
     num_gpus=0,
-)(MyLLM).remote(**llm_v2_kwargs)
+)(
+    MyLLM
+).remote(**llm_v2_kwargs)
 
 val_futures = [
     llm_v2.do_generate.remote(

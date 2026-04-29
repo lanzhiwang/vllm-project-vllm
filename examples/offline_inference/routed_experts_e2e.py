@@ -167,9 +167,9 @@ def validate_expert_ids(
 ) -> None:
     """Check that all expert IDs are within valid range [0, num_experts)."""
     for i, experts in enumerate(experts_list):
-        assert np.all(experts >= 0), (
-            f"Prompt {i}: negative expert IDs found, min={experts.min()}"
-        )
+        assert np.all(
+            experts >= 0
+        ), f"Prompt {i}: negative expert IDs found, min={experts.min()}"
         assert np.all(experts < num_experts), (
             f"Prompt {i}: expert ID out of range [0, {num_experts}), "
             f"max={experts.max()}"
@@ -179,9 +179,9 @@ def validate_expert_ids(
 def validate_shapes(experts_list: list[np.ndarray]) -> None:
     """Check that all routed_experts arrays have at least 2 dimensions."""
     for i, experts in enumerate(experts_list):
-        assert experts.ndim >= 2, (
-            f"Prompt {i}: expected at least 2D array, got shape {experts.shape}"
-        )
+        assert (
+            experts.ndim >= 2
+        ), f"Prompt {i}: expected at least 2D array, got shape {experts.shape}"
         logger.info("Prompt %d: routed_experts shape = %s", i, experts.shape)
 
 
@@ -195,9 +195,9 @@ def compare_token_ids(
     reference: list[list[int]],
 ) -> float:
     """Compare token IDs from two runs. Returns mismatch ratio."""
-    assert len(baseline) == len(reference), (
-        f"Length mismatch: {len(baseline)} vs {len(reference)}"
-    )
+    assert len(baseline) == len(
+        reference
+    ), f"Length mismatch: {len(baseline)} vs {len(reference)}"
 
     total_tokens = 0
     total_mismatches = 0
@@ -239,9 +239,9 @@ def compare_routed_experts(
 
     Raises AssertionError if ratio exceeds threshold.
     """
-    assert len(baseline) == len(reference), (
-        f"Length mismatch: {len(baseline)} vs {len(reference)}"
-    )
+    assert len(baseline) == len(
+        reference
+    ), f"Length mismatch: {len(baseline)} vs {len(reference)}"
 
     total_elements = 0
     total_mismatches = 0

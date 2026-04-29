@@ -48,9 +48,9 @@ def from_2_way_softmax(causal_lm, seq_cls_model, tokenizer, tokens, device):
 
     Reference: https://huggingface.co/Qwen/Qwen3-Reranker-0.6B/discussions/3
     """
-    assert len(tokens) == 2, (
-        "Method requires exactly two tokens for binary classification"
-    )
+    assert (
+        len(tokens) == 2
+    ), "Method requires exactly two tokens for binary classification"
 
     # Get the language model head weights (vocabulary_size x hidden_size)
     lm_head_weights = causal_lm.lm_head.weight

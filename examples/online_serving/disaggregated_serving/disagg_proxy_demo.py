@@ -50,8 +50,9 @@ class Proxy:
         model: str,
         scheduling_policy: SchedulingPolicy,
         custom_create_completion: Callable[[Request], StreamingResponse] | None = None,
-        custom_create_chat_completion: Callable[[Request], StreamingResponse]
-        | None = None,
+        custom_create_chat_completion: (
+            Callable[[Request], StreamingResponse] | None
+        ) = None,
     ):
         self.prefill_instances = prefill_instances
         self.decode_instances = decode_instances

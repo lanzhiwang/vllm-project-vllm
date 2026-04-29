@@ -198,9 +198,7 @@ def run_vlm2vec_phi3v(seed: int):
     print_embeddings(outputs[0].outputs.embedding)
 
     print("Image+Text embedding output:")
-    prompt_image_text = (
-        f"{image_token} Represent the given image with the following question: {text}"  # noqa: E501
-    )
+    prompt_image_text = f"{image_token} Represent the given image with the following question: {text}"  # noqa: E501
     outputs = llm.embed(
         {
             "prompt": prompt_image_text,
@@ -239,7 +237,8 @@ def run_vlm2vec_qwen2vl(seed: int):
     )
     processor.chat_template = load_chat_template(
         # The original chat template is not correct
-        EMBED_TEMPLATE_DIR / "vlm2vec_qwen2vl.jinja",
+        EMBED_TEMPLATE_DIR
+        / "vlm2vec_qwen2vl.jinja",
     )
 
     merged_path = str(
@@ -284,9 +283,7 @@ def run_vlm2vec_qwen2vl(seed: int):
     print_embeddings(outputs[0].outputs.embedding)
 
     print("Image+Text embedding output:")
-    prompt_image_text = (
-        f"{image_token} Represent the given image with the following question: {text}"  # noqa: E501
-    )
+    prompt_image_text = f"{image_token} Represent the given image with the following question: {text}"  # noqa: E501
     outputs = llm.embed(
         {
             "prompt": prompt_image_text,
