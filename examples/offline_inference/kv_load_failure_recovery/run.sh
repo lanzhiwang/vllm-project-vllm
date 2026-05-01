@@ -1,4 +1,5 @@
 #!/bin/bash
+set -x
 
 # Constants
 SHARED_STORAGE_DIR="local_storage"

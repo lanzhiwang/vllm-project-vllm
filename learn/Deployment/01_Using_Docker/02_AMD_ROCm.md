@@ -38,7 +38,7 @@ Prior to January 20th, 2026 when the official docker images became available on 
 Tip  提示
 
 Please check [LLM inference performance validation on AMD Instinct MI300X](https://rocm.docs.amd.com/en/latest/how-to/performance-validation/mi300x/vllm-benchmark.html) for instructions on how to use this prebuilt docker image. 
-请查阅 [AMD Instinct MI300X 上的 LLM 推理性能验证](https://rocm.docs.amd.com/en/latest/how-to/performance-validation/mi300x/vllm-benchmark.html) , 了解如何使用此预构建的 docker 镜像. 
+请查阅 [AMD Instinct MI300X 上的 LLM 推理性能验证](https://rocm.docs.amd.com/en/latest/how-to/performance-validation/mi300x/vllm-benchmark.html), 了解如何使用此预构建的 docker 镜像. 
 
 ## Build image from source  从源构建镜像[¶](https://docs.vllm.ai/en/v0.20.0/deployment/docker/#build-image-from-source "Permanent link")
 
@@ -69,7 +69,7 @@ First, build a docker image from [docker/Dockerfile.rocm](https://github.com/vll
 [docker/Dockerfile.rocm](https://github.com/vllm-project/vllm/blob/main/docker/Dockerfile.rocm) 默认使用 ROCm 7.0, 但也支持旧版 vLLM 分支中的 ROCm 5.7、6.0、6.1、6.2、6.3 和 6.4. 它提供了使用以下参数自定义 Docker 镜像构建的灵活性: 
 
 - `BASE_IMAGE`: specifies the base image used when running `docker build`. The default value `rocm/vllm-dev:base` is an image published and maintained by AMD. It is being built using [docker/Dockerfile.rocm_base](https://github.com/vllm-project/vllm/blob/main/docker/Dockerfile.rocm_base)  
-  `BASE_IMAGE` : 指定运行 `docker build` 时使用的基础镜像. 默认值为 `rocm/vllm-dev:base` , 该镜像由 AMD 发布和维护, 并使用 [docker/Dockerfile.rocm_base](https://github.com/vllm-project/vllm/blob/main/docker/Dockerfile.rocm_base) 构建. 
+  `BASE_IMAGE` : 指定运行 `docker build` 时使用的基础镜像. 默认值为 `rocm/vllm-dev:base`, 该镜像由 AMD 发布和维护, 并使用 [docker/Dockerfile.rocm_base](https://github.com/vllm-project/vllm/blob/main/docker/Dockerfile.rocm_base) 构建. 
 - `ARG_PYTORCH_ROCM_ARCH`: Allows to override the gfx architecture values from the base docker image  
   `ARG_PYTORCH_ROCM_ARCH` : 允许覆盖基础 Docker 镜像中的图形架构值. 
 

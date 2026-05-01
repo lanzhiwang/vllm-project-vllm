@@ -106,7 +106,7 @@ DOCKER_BUILDKIT=1 docker build . \
 
 > Note
 > By default vLLM will build for all GPU types for widest distribution. If you are just building for the current GPU type the machine is running on, you can add the argument `--build-arg torch_cuda_arch_list=""` for vLLM to find the current GPU type and build for that.
-> 默认情况下, vLLM 会构建支持所有 GPU 类型的版本, 以实现最广泛的覆盖. 如果您只想构建支持当前机器所运行 GPU 类型的版本, 可以添加参数 `--build-arg torch_cuda_arch_list=""` , 以便 vLLM 查找当前 GPU 类型并进行相应的构建.
+> 默认情况下, vLLM 会构建支持所有 GPU 类型的版本, 以实现最广泛的覆盖. 如果您只想构建支持当前机器所运行 GPU 类型的版本, 可以添加参数 `--build-arg torch_cuda_arch_list=""`, 以便 vLLM 查找当前 GPU 类型并进行相应的构建.
 >
 > If you are using Podman instead of Docker, you might need to disable SELinux labeling by adding `--security-opt label=disable` when running `podman build` command to avoid certain [existing issues](https://github.com/containers/buildah/discussions/4184).
 > 如果您使用的是 Podman 而不是 Docker, 则可能需要在运行 `podman build` 命令时添加 `--security-opt label=disable` 来禁用 SELinux 标签, 以避免某些现有问题.
