@@ -1,24 +1,39 @@
 # The vLLM Dockerfile is used to construct vLLM image that can be directly used
 # to run the OpenAI compatible server.
+# vLLM Dockerfile 用于构建 vLLM 镜像, 该镜像可直接用于
+# 运行兼容 OpenAI 接口的服务端.
 
 # Please update any changes made here to
 # docs/contributing/dockerfile/dockerfile.md and
 # docs/assets/contributing/dockerfile-stages-dependency.png
+# 请将此处所做的任何更改同步更新至:
+# docs/contributing/dockerfile/dockerfile.md
+# 以及 docs/assets/contributing/dockerfile-stages-dependency.png
 
 # =============================================================================
 # VERSION MANAGEMENT
+# 版本管理
 # =============================================================================
 # ARG defaults in this Dockerfile are the source of truth for pinned versions.
+# 本 Dockerfile 中的 ARG 默认值是固定版本(pinned versions)的唯一权威来源.
 # docker/versions.json is auto-generated for use with docker buildx bake.
+# 文件 docker/versions.json 是自动生成的, 专供 docker buildx bake 命令使用.
 #
 # When updating versions:
 # 1. Edit the ARG defaults below
 # 2. Run: python tools/generate_versions_json.py
+# 更新版本时, 请执行以下步骤:
+# 1. 编辑下方列出的 ARG 默认值.
+# 2. 运行命令: python tools/generate_versions_json.py
 #
 # To query versions programmatically:
 #   jq -r '.variable.CUDA_VERSION.default' docker/versions.json
+# 若需以编程方式查询版本信息, 可执行:
+#   jq -r '.variable.CUDA_VERSION.default' docker/versions.json
 #
 # To build with bake:
+#   docker buildx bake -f docker/docker-bake.hcl -f docker/versions.json
+# 若需使用 bake 命令进行构建, 可执行:
 #   docker buildx bake -f docker/docker-bake.hcl -f docker/versions.json
 # =============================================================================
 
@@ -29,6 +44,9 @@ ARG UBUNTU_VERSION=22.04
 # By parameterizing the base images, we allow third-party to use their own
 # base images. One use case is hermetic builds with base images stored in
 # private registries that use a different repository naming conventions.
+# 通过将基础镜像参数化, 我们允许第三方使用其自有的基础镜像.
+# 其中一个应用场景是"封闭式构建"(Hermetic Builds): 即基础镜像存储在
+# 私有镜像仓库中, 且该仓库采用了不同于常规的仓库命名规范.
 #
 # Example:
 # docker build --build-arg BUILD_BASE_IMAGE=registry.acme.org/mirror/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu20.04
@@ -37,6 +55,10 @@ ARG UBUNTU_VERSION=22.04
 # compatibility with other Linux OSes. The main reason for this is that the
 # glibc version is baked into the distro, and binaries built with one glibc
 # version are not backwards compatible with OSes that use an earlier version.
+# 重要提示: 我们特意选用旧版本的 Ubuntu 进行构建, 旨在确保与
+# 其他 Linux 操作系统之间保持广泛的兼容性. 主要原因在于: glibc
+# 版本是作为发行版的一部分被固化在系统中的; 而使用某一特定 glibc
+# 版本编译生成的二进制文件, 无法向后兼容那些使用了更早版本 glibc 的操作系统.
 ARG BUILD_BASE_IMAGE=nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04
 # Using cuda base image with minimal dependencies necessary for JIT compilation (FlashInfer, DeepGEMM, EP kernels)
 ARG FINAL_BASE_IMAGE=nvidia/cuda:${CUDA_VERSION}-base-ubuntu${UBUNTU_VERSION}
@@ -45,6 +67,9 @@ ARG FINAL_BASE_IMAGE=nvidia/cuda:${CUDA_VERSION}-base-ubuntu${UBUNTU_VERSION}
 # their own mirror. When doing so, we don't benefit from the transparent
 # installation of the GPG key of the PPA, as done by add-apt-repository, so we
 # also need a URL for the GPG key.
+# 通过将 Deadsnakes 仓库的 URL 参数化, 我们允许第三方使用其自建的镜像.
+# 在这种情况下, 我们将无法享受到 `add-apt-repository` 命令所提供的 PPA GPG 密钥自动安装的便利,
+# 因此我们还需要额外提供一个用于获取 GPG 密钥的 URL.
 ARG DEADSNAKES_MIRROR_URL
 ARG DEADSNAKES_GPGKEY_URL
 
@@ -57,6 +82,15 @@ ARG DEADSNAKES_GPGKEY_URL
 # We set the default value to the PyPA owned get-pip.py script.
 #
 # Reference: https://pip.pypa.io/en/stable/installation/#get-pip-py
+# PyPA 的 get-pip.py 脚本是一个自包含的"脚本+ZIP 文件"组合体,
+# 它同时提供了安装脚本以及经过 Base85 编码的 pip 归档文件.
+# 这一设计使得我们能够在尚无现成分发包的环境中, 实现 pip 的引导式安装(bootstrapping).
+#
+# 通过将 get-pip.py 安装脚本的 URL 参数化, 我们允许
+# 第三方使用其私有镜像中存储的脚本副本.
+# 我们将该参数的默认值设定为 PyPA 官方维护的 get-pip.py 脚本.
+#
+# 参考资料: https://pip.pypa.io/en/stable/installation/#get-pip-py
 ARG GET_PIP_URL="https://bootstrap.pypa.io/get-pip.py"
 
 # PIP supports fetching the packages from custom indexes, allowing third-party
@@ -67,12 +101,18 @@ ARG GET_PIP_URL="https://bootstrap.pypa.io/get-pip.py"
 #
 # Uv uses different variables. We set them by default to the same values as
 # PIP, but they can be overridden.
+# PIP 支持从自定义索引源获取软件包, 从而允许第三方在私有镜像中托管软件包.
+# PIP_INDEX_URL 和 PIP_EXTRA_INDEX_URL 是标准的 PIP 环境变量, 用于覆盖默认的索引源.
+# 默认情况下, 我们将这些变量留空; 这样一来, 如果构建过程未显式覆盖索引源设置, PIP 就会使用其自身的默认索引源.
+#
+# Uv 使用的是不同的环境变量. 默认情况下, 我们将这些变量设置为与 PIP 相同的值, 但这些设置是可以被覆盖的.
 ARG PIP_INDEX_URL
 ARG PIP_EXTRA_INDEX_URL
 ARG UV_INDEX_URL=${PIP_INDEX_URL}
 ARG UV_EXTRA_INDEX_URL=${PIP_EXTRA_INDEX_URL}
 
 # PyTorch provides its own indexes for standard and nightly builds
+# PyTorch 为标准版和每夜构建版提供了其专属的索引
 ARG PYTORCH_CUDA_INDEX_BASE_URL=https://download.pytorch.org/whl
 
 # PIP supports multiple authentication schemes, including keyring
@@ -82,6 +122,12 @@ ARG PYTORCH_CUDA_INDEX_BASE_URL=https://download.pytorch.org/whl
 # is no authentication.
 #
 # Reference: https://pip.pypa.io/en/stable/topics/authentication/#keyring-support
+# PIP 支持多种认证方案, 其中包括 keyring.
+# 通过将 PIP_KEYRING_PROVIDER 变量参数化, 并将其默认设置为"disabled"(禁用),
+# 我们允许第三方为其私有 Python 索引使用 keyring 认证,
+# 同时又不改变 PIP 默认的"无认证"行为.
+#
+# 参考资料: https://pip.pypa.io/en/stable/topics/authentication/#keyring-support
 ARG PIP_KEYRING_PROVIDER=disabled
 ARG UV_KEYRING_PROVIDER=${PIP_KEYRING_PROVIDER}
 
@@ -100,15 +146,18 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install system dependencies including build tools
 RUN apt-get update -y \
     && apt-get install -y --no-install-recommends \
+        # 开启编译器缓存, 加速重复构建
         ccache \
         software-properties-common \
         git \
         curl \
         sudo \
         python3-pip \
+        # RDMA/InfiniBand 支持, 多机通信必备
         libibverbs-dev \
         # Upgrade to GCC 10 to avoid https://gcc.gnu.org/bugzilla/show_bug.cgi?id=92519
         # as it was causing spam when compiling the CUTLASS kernels
+        # 明确指定 GCC 10, 避免 CUTLASS 等库在高版本 GCC 下产生的编译噪声和错误
         gcc-10 \
         g++-10 \
     && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 110 --slave /usr/bin/g++ g++ /usr/bin/g++-10 \
@@ -117,6 +166,8 @@ RUN apt-get update -y \
     # Ubuntu 20.04/22.04 where python3.x-dev is not available without a PPA)
     && (apt-get install -y --no-install-recommends python${PYTHON_VERSION}-dev 2>/dev/null || true) \
     && rm -rf /var/lib/apt/lists/* \
+    # 使用 uv 创建虚拟环境
+    # 目的: 将 Python 环境隔离在 /opt/venv, 方便后续阶段直接拷贝整个环境.
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
     && $HOME/.local/bin/uv venv /opt/venv --python ${PYTHON_VERSION} \
     && rm -f /usr/bin/python3 /usr/bin/python3-config /usr/bin/pip \
@@ -140,11 +191,16 @@ RUN gcc --version
 # Enable CUDA forward compatibility by setting '-e VLLM_ENABLE_CUDA_COMPATIBILITY=1'
 # Only needed for datacenter/professional GPUs with older drivers.
 # See: https://docs.nvidia.com/deploy/cuda-compatibility/
+# 通过设置 '-e VLLM_ENABLE_CUDA_COMPATIBILITY=1' 启用 CUDA 前向兼容性
+# 仅适用于驱动版本较旧的数据中心/专业级 GPU.
+# 参阅: https://docs.nvidia.com/deploy/cuda-compatibility/
 ENV VLLM_ENABLE_CUDA_COMPATIBILITY=0
 
 # ============================================================
 # SLOW-CHANGING DEPENDENCIES BELOW
 # These are the expensive layers that we want to cache
+# 下方为缓慢变化的依赖项
+# 这些是开销较大的层, 我们希望对其进行缓存
 # ============================================================
 
 # Install PyTorch and core CUDA dependencies
@@ -162,7 +218,9 @@ COPY requirements/common.txt requirements/common.txt
 COPY requirements/cuda.txt requirements/cuda.txt
 COPY use_existing_torch.py use_existing_torch.py
 COPY pyproject.toml pyproject.toml
+# 挂载缓存目录, 加速 uv 下载
 RUN --mount=type=cache,target=/root/.cache/uv \
+    # 支持安装开发版 Torch, 方便研究员测试新技术
     if [ "${PYTORCH_NIGHTLY}" = "1" ]; then \
         echo "Installing torch nightly..." \
         && uv pip install --python /opt/venv/bin/python3 torch torchaudio torchvision --pre \
@@ -179,6 +237,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Track PyTorch lib versions used during build and match in downstream instances.
 # We do this for both nightly and release so we can strip dependencies/*.txt as needed.
 # Otherwise library dependencies can upgrade/downgrade torch incorrectly.
+# 追踪构建过程中使用的 PyTorch 库版本, 并在下游实例中进行匹配.
+# 我们对每夜构建(Nightly)和正式发布(Release)版本均执行此操作, 以便在需要时移除 `dependencies/*.txt` 文件.
+# 否则, 库依赖项可能会导致 Torch 版本发生错误的升级或降级.
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip freeze | grep -i "^torch=\|^torchvision=\|^torchaudio=" > torch_lib_versions.txt \
     && TORCH_LIB_VERSIONS=$(cat torch_lib_versions.txt | xargs) \
@@ -210,6 +271,8 @@ COPY --from=base /workspace/torch_lib_versions.txt torch_lib_versions.txt
 
 # This timeout (in seconds) is necessary when installing some dependencies via uv since it's likely to time out
 # Reference: https://github.com/astral-sh/uv/pull/1694
+# 在通过 uv 安装某些依赖项时, 此超时设置(以秒为单位)是必要的, 因为安装过程极易因超时而失败.
+# 参考: https://github.com/astral-sh/uv/pull/1694
 ENV UV_HTTP_TIMEOUT=500
 ENV UV_INDEX_STRATEGY="unsafe-best-match"
 # Use copy mode to avoid hardlink failures with Docker cache mounts
@@ -238,6 +301,7 @@ COPY vllm/envs.py vllm/envs.py
 COPY vllm/__init__.py vllm/__init__.py
 
 # max jobs used by Ninja to build extensions
+# 限制并行任务数 (max_jobs), 防止在多核机器上编译时内存溢出 (OOM)
 ARG max_jobs=2
 ENV MAX_JOBS=${max_jobs}
 # number of threads used by nvcc
@@ -268,6 +332,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Build the vLLM wheel
 # if USE_SCCACHE is set, use sccache to speed up compilation
 # AWS credentials mounted at ~/.aws/credentials for sccache S3 auth (optional)
+# 引入 sccache: 这是分布式编译器缓存.
+# 目的: 如果你在 CI/CD 环境中构建, sccache 可以将编译好的 .o 文件存入 S3,
+# 下次构建时如果代码没变, 直接下载二进制文件, 编译时间从 20 分钟降到 1 分钟.
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=secret,id=aws-credentials,target=/root/.aws/credentials,required=false \
     if [ "$USE_SCCACHE" = "1" ]; then \
@@ -317,6 +384,8 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
 #################### EXTENSIONS BUILD IMAGE ####################
 # Build DeepEP - runs in PARALLEL with csrc-build
 # This stage is independent and doesn't affect csrc cache
+# 为什么要独立出一个阶段?
+# 这样 DeepEP 的构建可以和 vLLM 主体的 CSRC 编译并行执行, 充分利用多核服务器性能.
 FROM base AS extensions-build
 ARG CUDA_VERSION
 
