@@ -2,7 +2,7 @@
 
 * https://docs.vllm.ai/en/v0.20.0/examples/online_serving/api_client/
 
-Source [vllm/examples/online_serving/api_client.py](https://github.com/vllm-project/vllm/blob/main/examples/online_serving/api_client.py)
+Source [vllm/examples/online_serving/api_client.py](https://github.com/vllm-project/vllm/blob/main/examples/online_serving/api_client.py)
 
 ```python
 # SPDX-License-Identifier: Apache-2.0

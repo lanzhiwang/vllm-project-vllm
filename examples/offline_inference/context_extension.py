@@ -7,6 +7,11 @@ and run a simple chat example.
 
 Usage:
     python examples/offline_inference/context_extension.py
+
+本脚本演示了如何利用 YARN 方法(rope_parameters) 扩展 Qwen 模型的上下文长度, 并运行一个简单的对话示例.
+
+用法:
+python examples/offline_inference/context_extension.py
 """
 
 from vllm import LLM, RequestOutput, SamplingParams

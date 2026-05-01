@@ -9,6 +9,14 @@ streaming where you receive new tokens as they are generated.
 
 Usage:
     python examples/offline_inference/async_llm_streaming.py
+
+一个演示如何利用 AsyncLLM(V1 引擎)进行流式离线推理的简单示例.
+
+本脚本展示了 vLLM 的 AsyncLLM 引擎在离线推理场景下, 逐个 Token 进行流式输出的核心功能.
+它演示了"DELTA"模式的流式传输过程, 即随着新 Token 的生成, 您能实时接收到这些新 Token.
+
+使用方法:
+python examples/offline_inference/async_llm_streaming.py
 """
 
 import asyncio
@@ -28,6 +36,14 @@ async def stream_response(engine: AsyncLLM, prompt: str, request_id: str) -> Non
     2. Call engine.generate() and iterate over the async generator
     3. Print new tokens as they arrive
     4. Handle the finished flag to know when generation is complete
+
+    从 AsyncLLM 流式接收响应, 并随新 Token 的抵达实时显示.
+
+    此函数演示了核心的流式处理模式:
+    1. 创建 SamplingParams 对象, 并将输出类型(output kind)设置为 DELTA.
+    2. 调用 engine.generate() 方法, 并对返回的异步生成器进行迭代.
+    3. 随新 Token 的抵达, 实时将其打印输出.
+    4. 处理"完成"标志(finished flag), 以判断生成过程何时结束.
     """
     print(f"\n🚀 Prompt: {prompt!r}")
     print("💬 Response: ", end="", flush=True)

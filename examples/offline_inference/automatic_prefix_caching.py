@@ -16,6 +16,17 @@ but ask different questions.
 
 Run:
 python examples/offline_inference/automatic_prefix_caching.py
+
+vLLM 中自动前缀缓存(APC)功能的演示脚本.
+
+自动前缀缓存(APC)允许 vLLM 引擎在新的查询与之前的提示词共享相同前缀时, 重用已缓存的 KV(键值)对. 这有助于减少冗余计算, 从而提升推理速度.
+
+若要启用 APC, 请在初始化 vLLM 引擎时将参数 `enable_prefix_caching` 设置为 `True`.
+
+本脚本使用一个较长的 Markdown 表格作为共享的提示词前缀, 并对比了两个查询的生成耗时 - 这两个查询共享相同的前缀, 但提出了不同的问题.
+
+运行方式:
+python examples/offline_inference/automatic_prefix_caching.py
 """
 
 import time

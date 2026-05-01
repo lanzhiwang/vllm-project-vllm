@@ -6,6 +6,10 @@ with the correct prompt format on audio language models.
 
 For most models, the prompt format should follow corresponding examples
 on HuggingFace model repository.
+
+本示例演示了如何使用 vLLM, 以正确的提示格式对音频语言模型执行离线推理.
+
+对于大多数模型, 其提示格式应参照 HuggingFace 模型仓库中相应的示例.
 """
 
 import os

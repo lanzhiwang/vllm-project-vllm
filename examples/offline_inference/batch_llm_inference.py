@@ -19,6 +19,21 @@ Ray Data provides functionality for:
 
 Learn more about Ray Data's LLM integration:
 https://docs.ray.io/en/latest/data/working-with-llms.html
+
+本示例演示了如何利用 Ray Data 进行数据并行批量推理.
+
+Ray Data 是一个数据处理框架, 能够处理超大规模的数据集, 并为 vLLM 提供了"头等公民"级别的支持.
+
+Ray Data 提供了以下功能:
+* 支持读写大多数主流的文件格式及云对象存储.
+* 支持流式执行, 使您能够在数据集规模远超集群总内存容量的情况下执行推理任务.
+* 无需修改代码即可实现工作负载的横向扩展.
+* 在 Ray 集群内实现自动分片、负载均衡及自动扩缩容, 并内置了容错机制与重试语义.
+* 支持"连续批处理"(Continuous Batching), 确保 vLLM 副本始终处于饱和运行状态, 从而最大化 GPU 的利用率.
+* 兼容张量并行(Tensor Parallel)与流水线并行(Pipeline Parallel)推理模式.
+
+了解更多关于 Ray Data 与大型语言模型(LLM)集成的详情:
+https://docs.ray.io/en/latest/data/working-with-llms.html
 """
 
 import ray

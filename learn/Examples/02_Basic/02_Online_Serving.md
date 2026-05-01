@@ -2,7 +2,7 @@
 
 * https://docs.vllm.ai/en/v0.20.0/examples/basic/online_serving/
 
-Source [vllm/examples/basic/online_serving](https://github.com/vllm-project/vllm/tree/main/examples/basic/online_serving).
+Source [vllm/examples/basic/online_serving](https://github.com/vllm-project/vllm/tree/main/examples/basic/online_serving).
 
 ## OpenAI Chat Completion Client
 
