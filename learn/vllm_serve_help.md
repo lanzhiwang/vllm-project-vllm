@@ -5308,3 +5308,23 @@ VllmConfig:
     * 算子级性能调优与 Bug 排查: 在生产环境中, 若大模型服务的吞吐或延迟低于基准预期, 研发人员会开启 Profiler 对几十个推理步骤进行采样, 并将导出的 Nsight/Tensorboard 格式 Timeline 文件拖入 Chrome 中, 分析究竟是哪个 Attention 算子、通信算子(AllReduce)或 CPU-GPU 拷贝阻碍了计算流水线.
 
 --------------------------------------------------------------------------------------------------
+
+```bash
+docker run -ti --rm \
+--entrypoint /bin/bash \
+--security-opt seccomp=unconfined \
+--gpus '"device=1, 7"' \
+--name vllm-client \
+vllm/vllm-openai:v0.22.0-cu129-ubuntu2404
+
+docker run -ti --rm \
+--entrypoint /usr/bin/env \
+--security-opt seccomp=unconfined \
+--gpus '"device=1, 7"' \
+--name vllm-client \
+vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 bash
+
+python3 -m vllm.entrypoints.openai.api_server --help=all
+```
+
+--------------------------------------------------------------------------------------------------
