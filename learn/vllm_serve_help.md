@@ -19,7 +19,7 @@ docker run --rm --gpus all \
 
 vllm serve
 
-docker run -ti --rm --gpus '"device=1, 7"' --name vllm-client vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 bash
+docker run -ti --rm --gpus '"device=1, 7"' --name vllm-server vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 bash
 
 ```
 
@@ -27,7 +27,7 @@ docker run -ti --rm --gpus '"device=1, 7"' --name vllm-client vllm/vllm-openai:v
 
 Q: 假设你是一位精通 vllm, LLM, Docker 等的高级研究人员, 我使用 vllm 提供的镜像启动容器, 无论我是否指定 GPU 设备, 都有如下报错
 ```bash
-(base) root@k8s-a40-node02:~# docker run -ti --rm --name vllm-client vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 bash
+(base) root@k8s-a40-node02:~# docker run -ti --rm --name vllm-server vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 bash
 OpenBLAS blas_thread_init: pthread_create failed for thread 1 of 64: Operation not permitted
 OpenBLAS blas_thread_init: ensure that your address space and process count limits are big enough (ulimit -a)
 OpenBLAS blas_thread_init: or set a smaller OPENBLAS_NUM_THREADS to fit into what you have available
@@ -305,7 +305,7 @@ Traceback (most recent call last):
     from numpy._core._multiarray_umath import (
 RuntimeError: CPU dispatcher tracer already initlized
 (base) root@k8s-a40-node02:~#
-(base) root@k8s-a40-node02:~# docker run -ti --rm --gpus '"device=1, 7"' --name vllm-client vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 bash
+(base) root@k8s-a40-node02:~# docker run -ti --rm --gpus '"device=1, 7"' --name vllm-server vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 bash
 OpenBLAS blas_thread_init: pthread_create failed for thread 1 of 64: Operation not permitted
 OpenBLAS blas_thread_init: ensure that your address space and process count limits are big enough (ulimit -a)
 OpenBLAS blas_thread_init: or set a smaller OPENBLAS_NUM_THREADS to fit into what you have available
@@ -619,7 +619,7 @@ RuntimeError: CPU dispatcher tracer already initlized
   docker run -ti --rm \
     --security-opt seccomp=unconfined \
     --gpus '"device=1, 7"' \
-    --name vllm-client \
+    --name vllm-server \
     vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 bash
   ```
 
@@ -629,7 +629,7 @@ RuntimeError: CPU dispatcher tracer already initlized
   docker run -ti --rm \
     --privileged \
     --gpus '"device=1, 7"' \
-    --name vllm-client \
+    --name vllm-server \
     vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 bash
   ```
 
@@ -639,7 +639,7 @@ RuntimeError: CPU dispatcher tracer already initlized
   docker run -ti --rm \
     -e OPENBLAS_NUM_THREADS=1 \
     --gpus '"device=1, 7"' \
-    --name vllm-client \
+    --name vllm-server \
     vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 bash
   ```
 
@@ -687,11 +687,11 @@ spec:
 
 可用方案:
 ```bash
-docker run -ti --rm --security-opt seccomp=unconfined --gpus '"device=1, 7"' --name vllm-client vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 --help
+docker run -ti --rm --security-opt seccomp=unconfined --gpus '"device=1, 7"' --name vllm-server vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 --help
 
-docker run -ti --rm --privileged --gpus '"device=1, 7"' --name vllm-client vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 --help
+docker run -ti --rm --privileged --gpus '"device=1, 7"' --name vllm-server vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 --help
 
-(base) root@k8s-a40-node02:~# docker run -ti --rm --security-opt seccomp=unconfined --gpus '"device=1, 7"' --name vllm-client vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 --help
+(base) root@k8s-a40-node02:~# docker run -ti --rm --security-opt seccomp=unconfined --gpus '"device=1, 7"' --name vllm-server vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 --help
 usage: vllm serve [model_tag] [options]
 
 Launch a local OpenAI-compatible API server to serve LLM
@@ -825,7 +825,7 @@ Documentation:         https://docs.vllm.ai
 
 Q: 假设你是一位精通 vllm, LLM, Docker 等的高级研究人员, 我查看了 vllm serve 的所有参数, 如下所示:
 ```bash
-(base) root@k8s-a40-node02:~# docker run -ti --rm --security-opt seccomp=unconfined --gpus '"device=1, 7"' --name vllm-client vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 --help=all
+(base) root@k8s-a40-node02:~# docker run -ti --rm --security-opt seccomp=unconfined --gpus '"device=1, 7"' --name vllm-server vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 --help=all
 usage: vllm serve [model_tag] [options]
 
 Launch a local OpenAI-compatible API server to serve LLM
@@ -1983,7 +1983,7 @@ docker run -d --rm \
 
 Q: 假设你是一位精通 vllm, LLM, Docker 等的高级研究人员, 我查看了 vllm serve 的所有参数, 如下所示:
 ```bash
-(base) root@k8s-a40-node02:~# docker run -ti --rm --security-opt seccomp=unconfined --gpus '"device=1, 7"' --name vllm-client vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 --help=all
+(base) root@k8s-a40-node02:~# docker run -ti --rm --security-opt seccomp=unconfined --gpus '"device=1, 7"' --name vllm-server vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 --help=all
 
 ```
 请分别说明这些参数的含义, 使用方法和使用场景
@@ -4993,7 +4993,7 @@ vLLM 近期引入了 IR(Intermediate Representation, 中间表示) 的编译与�
 #### 使用方法
 支持通过逗号分隔的优先级列表单独为具体的 IR 算子进行配置:
 ```bash
-# 单独配置算子优先级: 对于 rms_norm 优先用 vllm_c, 找不到再用 native；fused_add_rms_norm 强制用 vllm_c
+# 单独配置算子优先级: 对于 rms_norm 优先用 vllm_c, 找不到再用 native; fused_add_rms_norm 强制用 vllm_c
 vllm serve <model_path> \
   --ir-op-priority.rms_norm=vllm_c,native \
   --ir-op-priority.fused_add_rms_norm=vllm_c
@@ -5153,7 +5153,7 @@ VllmConfig:
 
 ---
 
-### 一、 架构与多节点解耦类(EPD 与 PD 架构核心)
+### 一、架构与多节点解耦类(EPD 与 PD 架构核心)
 
 随着大模型和多模态模型体积的增加, 将"推理"拆分为不同阶段并在不同节点上执行(如 Prefill/Decode 分离, 或多模态 Encoder/Decoder 分离)成为主流架构. 以下参数正是为此服务的.
 
@@ -5189,7 +5189,7 @@ VllmConfig:
 
 ---
 
-### 二、 性能与编译深度优化类(算力压榨核心)
+### 二、性能与编译深度优化类(算力压榨核心)
 
 #### 4. `--compilation-config` 或 `-cc`
 * 含义: `torch.compile`(PyTorch 图模式编译)与 CUDA Graph 捕捉深度配置. 控制底层算子融合和静态计算图捕获尺寸, 降低 CPU 侧发射内核(Kernel Launch)的开销.
@@ -5241,7 +5241,7 @@ VllmConfig:
 
 ---
 
-### 三、 算法与应用场景适配类
+### 三、算法与应用场景适配类
 
 #### 9. `--reasoning-config`
 * 含义: 推理/思考型模型(如 DeepSeek-R1、Qwen3-Instruct、Nemotron3 等)专属配置. 用于显式告知 vLLM 该模型思考链的开始和结束标记(Reasoning Boundary Tokens), 以此来统计和控制思维链预算(Thinking Budget).
@@ -5286,7 +5286,7 @@ VllmConfig:
 
 ---
 
-### 四、 辅助平台与工具类
+### 四、辅助平台与工具类
 
 #### 13. `--additional-config`
 * 含义: 特定平台/硬件的专有附加配置. 当 vLLM 运行在非 NVIDIA CUDA 硬件上(如华为 Ascend、昇腾、Intel Gaudi、Google TPU、AWS Neuron 等专有 AI 芯片)时, 会有很多芯片厂商独有的底层通信、编译或调度参数. 这些不属于 vLLM 核心通用选项的参数, 会被封装并由此传入.
@@ -5309,19 +5309,632 @@ VllmConfig:
 
 --------------------------------------------------------------------------------------------------
 
+Q: 假设你是一位精通 LLM, k8s 相关的高级研究人员, 我获取到了 vllm serve 的所有可用参数, 参数如下:
+```bash
+(base) root@k8s-a40-node02:~# docker run -ti --rm --security-opt seccomp=unconfined --gpus '"device=1, 7"' --name vllm-server vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 --help=all
+usage: vllm serve [model_tag] [options]
+
+(base) root@k8s-a40-node02:~#
+```
+现在我想通过日志详细了解关于 vllm 的各个方面, 请帮忙总结上述参数中有哪些参数可以输出详细的日志, 也请总结一些有哪些参数或者环境变量可以输出底层驱动, gpu, pytorch 相关的日志, 我想通过日志了解这些部分的方方面面
+
+作为精通大语言模型(LLM)推理与 Kubernetes 容器云架构的研究人员, 要在生产或测试环境中彻底洞察 vLLM、PyTorch、分布式通信以及底层 GPU 驱动的运行状态, 通常需要应用层参数(vLLM CLI)与系统底层环境变量的双重配合.
+
+以下为您系统地梳理和总结了从应用层到驱动底层的各种日志、调试与性能剖析(Profiling)手段.
+
+---
+
+### 一、vLLM CLI 命令行参数中的日志与观测配置
+
+基于您提供的 `vllm serve`(版本约 `v0.22.0`)参数列表, 以下参数对于输出详细日志或过滤干扰信息非常关键, 按功能归类如下:
+
+#### 1. API 访问与请求/响应日志
+
+* `--enable-log-requests`
+    * 作用: 开启请求层面的详细日志. 在 `INFO` 日志级别下会输出 Request ID、参数以及 LoRA 请求信息; 在 `DEBUG` 级别下会输出具体的 Prompt 输入(如文本或 Token ID).
+
+* `--enable-log-outputs`
+    * 作用: 在后台日志中实时打印模型生成的文本或 token, 便于直观观测模型每一次的具体回复.
+
+* `--max-log-len`
+    * 作用: 限制单条请求/响应日志的最大字符长度, 防止因为过长(如数万 token)的 prompt 撑爆日志收集系统.
+
+* `--disable-access-log-for-endpoints`
+    * 作用: 指定需要静音的 FastAPI 路由(例如: `"/health,/metrics,/ping"`).
+    * K8s 实践: 强烈建议在 K8s 环境中配置此参数. K8s 的 Liveness/Readiness 探针或 Prometheus 拉取监控指标的频率通常极高, 不加过滤会导致 Container Stdout 被高频的心跳日志占满, 掩盖真正的业务报错.
+
+* `--disable-uvicorn-access-log` & `--uvicorn-log-level`
+    * 作用: 彻底关闭 Uvicorn 默认的 HTTP 请求日志, 或者调节其输出级别(如设为 `warning`).
+
+#### 2. 推理引擎核心与调度层日志
+
+* `--no-disable-log-stats` (即不设置 `--disable-log-stats`)
+    * 作用: 默认开启. 每隔约 5 秒, 推理引擎就会在日志中定期打印当前的吞吐性能统计(如 Prefill/Decode 的平均 token 速度, 以及当前的 GPU KV Cache 占用率).
+
+* `--aggregate-engine-logging`
+    * 作用: 当使用数据并行(Data Parallelism)时, 控制是否聚合输出统计信息(默认 `False`, 会打印各个 engine 的详细明细).
+
+* `--enable-logging-iteration-details`
+    * 作用: Scheduler 深度观测利器. 开启后, 推理引擎的每一次 Iteration(迭代步)都会在日志中打印该步调度的 Context/Generation 请求数、Token 数量以及该迭代所消耗的 CPU 时间. 这对于定位排队延迟和调度抖动非常有价值.
+
+* `--log-error-stack`
+    * 作用: 若运行报错, 在日志中完整地打出 Python 异常的 Traceback 堆栈, 以便查错.
+
+#### 3. 硬件性能分析、图捕获与指标
+
+* `--enable-layerwise-nvtx-tracing`
+    * 作用: 启动层级(Layer-wise)的 NVTX 追踪. 它会在每个算子/网络层执行时打上标记, 并把输入输出的 Tensor Shape 附加在 NVTX 标记上. 开启后可以使用 NVIDIA Nsight Systems 进行极深度的 GPU 执行瓶颈排查(注意: 由于实现机制冲突, 此选项会禁用 CUDA Graphs 优化).
+
+* `--cudagraph-metrics`
+    * 作用: 在周期性日志中输出 CUDA 图捕获和调度的动态指标(包括填充/未填充的 Token 数量、执行模式以及各自被触发的频率等).
+
+* `--kv-cache-metrics` & `--kv-cache-metrics-sample`
+    * 作用: 输出 KV Cache 的块(Block)生存期、空闲时间、复用间隔等生命周期统计, 适合用于 prefix caching 的策略调优.
+
+* `--profiler-config`
+    * 作用: 精细配置 PyTorch Profiler 的 JSON 参数. 支持配置 `torch_profiler_dir` 并在执行时抓取堆栈(`with_stack`)、内存占用变化(`with_memory`)、以及算子 FLOPs 等.
+
+* `--enable-mfu-metrics`
+    * 作用: 实时计算并输出当前硬件下的 Model FLOPs Utilization(模型 FLOPs 利用率), 能直观反映算力有没有打满.
+
+---
+
+### 二、底层驱动、GPU、PyTorch 相关日志与环境变量
+
+要完整排查 LLM 推理卡死、OOM 或是多卡并行报错等底层问题, 需要借助环境中的系统变量.
+
+#### 1. vLLM 与 Python 级别的调试变量
+
+* `VLLM_LOGGING_LEVEL=DEBUG`
+    * 作用: 将 vLLM 底层 logger 的全局日志级别调整为 `DEBUG`, 会展示分布式通信初始化、引擎参数自动估算等更多细节.
+
+* `VLLM_DEBUG_LOG_API_SERVER_RESPONSE=TRUE`
+    * 作用: 输出 API 响应体的完整 JSON 文本, 便于排查数据返回时的格式问题.
+
+* `VLLM_TRACE_FUNCTION=1`
+    * 作用: 终极卡死(Hangs)排查工具. 它将追踪并记录 vLLM 内部执行的所有 Python 函数调用过程. 如果推理在某些环节(比如加载模型、NCCL 初始化)无限期挂起, 可以通过最后输出的函数调用栈精准定位卡在哪一行.
+
+#### 2. PyTorch 与多卡/多节点分布式日志(k8s 集群调试重点)
+
+在 Kubernetes 环境中, 只要 `--tensor-parallel-size` 或 `--pipeline-parallel-size` 大于 1, 就极容易因为容器网络隔离、IP 绑定错误导致分布式通信卡死.
+
+* `TORCH_DISTRIBUTED_DEBUG=DETAIL`
+    * 作用: 输出极其详细的 PyTorch 跨卡/跨机通信日志, 包括成员加入(Process Group Join)、同步心跳和超时详细堆栈. 如果集群存在网络波动, 这有助于揪出在哪个 rank 出现了不同步.
+
+* `TORCH_SHOW_CPP_STACKTRACES=1`
+    * 作用: 当底层 C++ 库(如 libtorch)遇到致命崩溃(Segmentation Fault)时, 强制打印底层 C++ 的堆栈信息, 而不是只抛出一个模糊的 Python `RuntimeError`.
+
+* `CUDA_LAUNCH_BLOCKING=1`
+    * 作用: 由于 CUDA 算子执行是异步的, Python 报错时指向的往往不是真正引起崩溃的那个算子. 设为 `1` 将使所有 CUDA 算子同步执行, 当 GPU 报错(如 `illegal memory access`)时, 能够精准定位是哪一个 kernel 的哪一行代码引起的崩溃.
+
+#### 3. NCCL 分布式通信日志(多卡/多节点)
+
+在基于 K8s 部署的 MoE(混合专家模型)或超大参数模型推理中, 多卡通信主要依赖 NVIDIA NCCL 库.
+
+* `NCCL_DEBUG=INFO` (排查挂起时可设为 `TRACE`)
+    * 作用: 打印 NCCL 初始化的网卡选择、拓扑探测(是否走 NVLink、PCIe、IB 还是 RoCE 等万兆网)、和多卡握手信息. 可以一眼看出是否由于容器内没有正确暴露网卡导致 NCCL 走环回地址(lo)而卡死.
+
+* `NCCL_DEBUG_SUBSYS=INIT,COLL,ENV,ALLOC`
+    * 作用: 限制或指定 NCCL 的监控子系统, 专门查看通信初始化(INIT)、集合通信(COLL)、环境变量(ENV)或内存分配(ALLOC).
+
+#### 4. Triton 编译器与内核自适应(Autotuning)日志
+
+vLLM 的许多自定义算子(如 Mamba 的状态更新、FlashAttention 或一些量化算子)都是在运行初期通过 Triton 编译器实时编译的.
+
+* `TRITON_DEBUG=1`
+    * 作用: 开启后, 会打印 Triton 算子编译的编译栈日志, 并把生成的各种中间表示(如 TTIR、PTX、AMDGCN 等)输出到本地磁盘, 供深入优化或排查编译报错.
+
+* `TRITON_PRINT_AUTOTUNING=1`
+    * 作用: 当 vLLM 首次执行某些计算 kernel 时, Triton 会在多种可选配置(如 block_size、num_warps)中自动微调寻找最优解. 开启此标志可以在标准输出中打印出调优尝试的详细耗时和胜出配置.
+
+---
+
+### 三、推荐的实践流程
+
+在实际排查中, 建议分阶段配合使用上述配置:
+
+1.  日常 K8s 生产监控:
+    * 推荐参数组合:
+        `--enable-log-requests --disable-access-log-for-endpoints="/health,/metrics,/ping" --no-disable-log-stats`
+    * 说明: 这样能保证既有周期性的 QPS、吞吐、KV Cache 使用指标, 又排除了 K8s 心跳探测日志的干扰, 让日志输出保持整洁干净.
+
+2.  遇到分布式死锁或 Hang 住问题:
+    * 推荐环境变量组合:
+        `export VLLM_LOGGING_LEVEL=DEBUG`
+        `export VLLM_TRACE_FUNCTION=1`
+        `export NCCL_DEBUG=INFO`
+        `export TORCH_DISTRIBUTED_DEBUG=DETAIL`
+    * 说明: 此组合下, 日志会呈现完整的网卡交互、NCCL 网络握手, 以及 vLLM 内部挂起时的最后一行 Python 调用函数.
+
+3.  遇到硬崩溃(Core Dump、Segfault、CUDA Error):
+    * 推荐参数与变量组合:
+        `--enforce-eager` (CLI 参数, 用以禁用 Cuda Graph 以隔离问题)
+        `export CUDA_LAUNCH_BLOCKING=1`
+        `export TORCH_SHOW_CPP_STACKTRACES=1`
+    * 说明: 此组合能使 CUDA 异常在抛出时立即停在故障发生行, 并打出 C++ 底层调用堆栈, 防止因为 Cuda Graph 异步复放(Replay)导致报错信息错位.
+
+--------------------------------------------------------------------------------------------------
+
+Q: 假设你是一位精通 LLM, k8s 相关的高级研究人员, 我使用如下参数和环境变量启动 vllm serve:
+```bash
+export VLLM_LOGGING_LEVEL=DEBUG
+export VLLM_DEBUG_LOG_API_SERVER_RESPONSE=TRUE
+export VLLM_TRACE_FUNCTION=1
+
+export TORCH_DISTRIBUTED_DEBUG=DETAIL
+export TORCH_SHOW_CPP_STACKTRACES=1
+export CUDA_LAUNCH_BLOCKING=1
+
+export NCCL_DEBUG=TRACE
+export NCCL_DEBUG_SUBSYS=INIT,COLL,ENV,ALLOC
+
+export TRITON_DEBUG=1
+export TRITON_PRINT_AUTOTUNING=1
+
+root@af81976e389b:/vllm-workspace# vllm serve \
+/model/Qwen2.5-1.5B-Instruct \
+--served-model-name Qwen2.5-1.5B-Instruct \
+--trust-remote-code \
+--use-tqdm-on-load \
+--host 0.0.0.0 \
+--port 8000 \
+--api-key my_secret_token_123 my_secret_token_456 \
+--enable-log-requests \
+--enable-log-outputs \
+--no-disable-uvicorn-access-log \
+--uvicorn-log-level debug \
+--aggregate-engine-logging \
+--enable-logging-iteration-details \
+--log-error-stack \
+--cudagraph-metrics \
+--kv-cache-metrics \
+--enable-mfu-metrics \
+--enable-log-deltas \
+--enable-prompt-tokens-details \
+--enable-tokenizer-info-endpoint \
+--enable-server-load-tracking \
+--enable-force-include-usage \
+--shutdown-timeout 30
+DEBUG 06-11 02:55:39 [plugins/__init__.py:36] No plugins for group vllm.platform_plugins found.
+DEBUG 06-11 02:55:39 [platforms/__init__.py:37] Checking if TPU platform is available.
+DEBUG 06-11 02:55:39 [platforms/__init__.py:56] TPU platform is not available because: No module named 'libtpu'
+DEBUG 06-11 02:55:39 [platforms/__init__.py:62] Checking if CUDA platform is available.
+DEBUG 06-11 02:55:39 [platforms/__init__.py:85] Confirmed CUDA platform is available.
+DEBUG 06-11 02:55:39 [platforms/__init__.py:113] Checking if ROCm platform is available.
+DEBUG 06-11 02:55:39 [platforms/__init__.py:127] ROCm platform is not available because: No module named 'amdsmi'
+DEBUG 06-11 02:55:39 [platforms/__init__.py:134] Checking if XPU platform is available.
+DEBUG 06-11 02:55:39 [platforms/__init__.py:165] Checking if CPU platform is available.
+DEBUG 06-11 02:55:39 [platforms/__init__.py:62] Checking if CUDA platform is available.
+DEBUG 06-11 02:55:39 [platforms/__init__.py:85] Confirmed CUDA platform is available.
+DEBUG 06-11 02:55:39 [platforms/__init__.py:246] Automatically detected platform cuda.
+DEBUG 06-11 02:55:50 [entrypoints/utils.py:171] Setting VLLM_WORKER_MULTIPROC_METHOD to 'spawn'
+DEBUG 06-11 02:55:50 [plugins/__init__.py:44] Available plugins for group vllm.general_plugins:
+DEBUG 06-11 02:55:50 [plugins/__init__.py:46] - lora_filesystem_resolver -> vllm.plugins.lora_resolvers.filesystem_resolver:register_filesystem_resolver
+DEBUG 06-11 02:55:50 [plugins/__init__.py:46] - lora_hf_hub_resolver -> vllm.plugins.lora_resolvers.hf_hub_resolver:register_hf_hub_resolver
+DEBUG 06-11 02:55:50 [plugins/__init__.py:49] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+(APIServer pid=58) INFO 06-11 02:55:51 [entrypoints/utils.py:344]
+(APIServer pid=58) INFO 06-11 02:55:51 [entrypoints/utils.py:344]        █     █     █▄   ▄█
+(APIServer pid=58) INFO 06-11 02:55:51 [entrypoints/utils.py:344]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.22.0
+(APIServer pid=58) INFO 06-11 02:55:51 [entrypoints/utils.py:344]   █▄█▀ █     █     █     █  model   /model/Qwen2.5-1.5B-Instruct
+(APIServer pid=58) INFO 06-11 02:55:51 [entrypoints/utils.py:344]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=58) INFO 06-11 02:55:51 [entrypoints/utils.py:344]
+(APIServer pid=58) INFO 06-11 02:55:51 [entrypoints/utils.py:278] non-default args: {'model_tag': '/model/Qwen2.5-1.5B-Instruct', 'enable_prompt_tokens_details': True, 'enable_server_load_tracking': True, 'enable_force_include_usage': True, 'enable_tokenizer_info_endpoint': True, 'enable_log_outputs': True, 'log_error_stack': True, 'host': '0.0.0.0', 'uvicorn_log_level': 'debug', 'api_key': ['my_secret_token_123', 'my_secret_token_456'], 'model': '/model/Qwen2.5-1.5B-Instruct', 'trust_remote_code': True, 'served_model_name': ['Qwen2.5-1.5B-Instruct'], 'kv_cache_metrics': True, 'cudagraph_metrics': True, 'enable_mfu_metrics': True, 'enable_logging_iteration_details': True, 'aggregate_engine_logging': True, 'shutdown_timeout': 30, 'enable_log_requests': True}
+(APIServer pid=58) WARNING 06-11 02:55:51 [envs.py:2057] Unknown vLLM environment variable detected: VLLM_BUILD_URL
+(APIServer pid=58) WARNING 06-11 02:55:51 [envs.py:2057] Unknown vLLM environment variable detected: VLLM_IMAGE_TAG
+(APIServer pid=58) WARNING 06-11 02:55:51 [envs.py:2057] Unknown vLLM environment variable detected: VLLM_BUILD_PIPELINE
+(APIServer pid=58) WARNING 06-11 02:55:51 [envs.py:2057] Unknown vLLM environment variable detected: VLLM_BUILD_COMMIT
+(APIServer pid=58) DEBUG 06-11 02:55:51 [model_executor/models/registry.py:831] Cached model info file for class vllm.model_executor.models.qwen2.Qwen2ForCausalLM not found
+(APIServer pid=58) DEBUG 06-11 02:55:51 [model_executor/models/registry.py:902] Cache model info for class vllm.model_executor.models.qwen2.Qwen2ForCausalLM miss. Loading model instead.
+(APIServer pid=58) DEBUG 06-11 02:56:08 [model_executor/models/registry.py:912] Loaded model info for class vllm.model_executor.models.qwen2.Qwen2ForCausalLM
+(APIServer pid=58) DEBUG 06-11 02:56:09 [utils/import_utils.py:73] Loading module triton_kernels from /usr/local/lib/python3.12/dist-packages/vllm/third_party/triton_kernels/__init__.py.
+(APIServer pid=58) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+(APIServer pid=58) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+(APIServer pid=58) DEBUG 06-11 02:56:11 [logging_utils/log_time.py:29] Registry inspect model class: Elapsed time 20.6897849 secs
+(APIServer pid=58) INFO 06-11 02:56:11 [config/model.py:617] Resolved architecture: Qwen2ForCausalLM
+(APIServer pid=58) INFO 06-11 02:56:11 [config/model.py:1752] Using max model len 32768
+(APIServer pid=58) DEBUG 06-11 02:56:11 [config/model.py:1817] Generative models support chunked prefill.
+(APIServer pid=58) DEBUG 06-11 02:56:11 [config/model.py:1875] Generative models support prefix caching.
+(APIServer pid=58) DEBUG 06-11 02:56:11 [engine/arg_utils.py:2374] Enabling chunked prefill by default
+(APIServer pid=58) DEBUG 06-11 02:56:11 [engine/arg_utils.py:2402] Enabling prefix caching by default
+(APIServer pid=58) DEBUG 06-11 02:56:11 [engine/arg_utils.py:2550] Defaulting max_num_batched_tokens to 2048 for OPENAI_API_SERVER usage context.
+(APIServer pid=58) DEBUG 06-11 02:56:11 [engine/arg_utils.py:2560] Defaulting max_num_seqs to 256 for OPENAI_API_SERVER usage context.
+(APIServer pid=58) INFO 06-11 02:56:11 [config/vllm.py:977] Asynchronous scheduling is enabled.
+(APIServer pid=58) DEBUG 06-11 02:56:11 [config/kernel.py:252] Setting platform-specific IR op priority defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native']), user-defined: IrOpPriorityConfig(rms_norm=[], fused_add_rms_norm=[])
+(APIServer pid=58) INFO 06-11 02:56:11 [config/kernel.py:270] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+(APIServer pid=58) DEBUG 06-11 02:56:11 [plugins/__init__.py:36] No plugins for group vllm.stat_logger_plugins found.
+(APIServer pid=58) DEBUG 06-11 02:56:11 [tokenizers/registry.py:78] Loading CachedHfTokenizer for tokenizer_mode='hf'
+(APIServer pid=58) DEBUG 06-11 02:56:12 [renderers/registry.py:58] Loading HfRenderer for renderer_mode='hf'
+DEBUG 06-11 02:56:21 [plugins/__init__.py:36] No plugins for group vllm.platform_plugins found.
+DEBUG 06-11 02:56:21 [platforms/__init__.py:37] Checking if TPU platform is available.
+DEBUG 06-11 02:56:21 [platforms/__init__.py:56] TPU platform is not available because: No module named 'libtpu'
+DEBUG 06-11 02:56:21 [platforms/__init__.py:62] Checking if CUDA platform is available.
+DEBUG 06-11 02:56:21 [platforms/__init__.py:85] Confirmed CUDA platform is available.
+DEBUG 06-11 02:56:21 [platforms/__init__.py:113] Checking if ROCm platform is available.
+DEBUG 06-11 02:56:21 [platforms/__init__.py:127] ROCm platform is not available because: No module named 'amdsmi'
+DEBUG 06-11 02:56:21 [platforms/__init__.py:134] Checking if XPU platform is available.
+DEBUG 06-11 02:56:21 [platforms/__init__.py:165] Checking if CPU platform is available.
+DEBUG 06-11 02:56:21 [platforms/__init__.py:62] Checking if CUDA platform is available.
+DEBUG 06-11 02:56:21 [platforms/__init__.py:85] Confirmed CUDA platform is available.
+DEBUG 06-11 02:56:21 [platforms/__init__.py:246] Automatically detected platform cuda.
+(EngineCore pid=426) DEBUG 06-11 02:56:22 [v1/engine/core.py:1073] Waiting for init message from front-end.
+(APIServer pid=58) DEBUG 06-11 02:56:22 [v1/engine/utils.py:1297] HELLO from local core engine process 0.
+(EngineCore pid=426) DEBUG 06-11 02:56:22 [v1/engine/core.py:1084] Received init message: EngineHandshakeMetadata(addresses=EngineZmqAddresses(inputs=['ipc:///tmp/3373f0c3-5d5b-40fb-99ea-ee3042d76c63'], outputs=['ipc:///tmp/eb03b7cf-d86c-4e8c-93ab-9dec324a26be'], coordinator_input=None, coordinator_output=None, frontend_stats_publish_address=None), parallel_config={})
+(EngineCore pid=426) DEBUG 06-11 02:56:22 [v1/engine/core.py:883] Has DP Coordinator: False, stats publish address: None
+(EngineCore pid=426) DEBUG 06-11 02:56:22 [plugins/__init__.py:44] Available plugins for group vllm.general_plugins:
+(EngineCore pid=426) DEBUG 06-11 02:56:22 [plugins/__init__.py:46] - lora_filesystem_resolver -> vllm.plugins.lora_resolvers.filesystem_resolver:register_filesystem_resolver
+(EngineCore pid=426) DEBUG 06-11 02:56:22 [plugins/__init__.py:46] - lora_hf_hub_resolver -> vllm.plugins.lora_resolvers.hf_hub_resolver:register_hf_hub_resolver
+(EngineCore pid=426) DEBUG 06-11 02:56:22 [plugins/__init__.py:49] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+(EngineCore pid=426) INFO 06-11 02:56:22 [v1/engine/core.py:112] Initializing a V1 LLM engine (v0.22.0) with config: model='/model/Qwen2.5-1.5B-Instruct', speculative_config=None, tokenizer='/model/Qwen2.5-1.5B-Instruct', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=True, dtype=torch.bfloat16, max_seq_len=32768, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=None, quantization_config=None, enforce_eager=False, enable_return_routed_experts=False, kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, kv_cache_metrics=True, kv_cache_metrics_sample=0.01, cudagraph_metrics=True, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=True, enable_mm_processor_stats=False, enable_logging_iteration_details=True), seed=0, served_model_name=Qwen2.5-1.5B-Instruct, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.VLLM_COMPILE: 3>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['none'], 'ir_enable_torch_wrap': True, 'splitting_ops': ['vllm::unified_attention_with_output', 'vllm::unified_mla_attention_with_output', 'vllm::mamba_mixer2', 'vllm::mamba_mixer', 'vllm::short_conv', 'vllm::linear_attention', 'vllm::plamo2_mamba_mixer', 'vllm::qwen_gdn_attention_core', 'vllm::gdn_attention_core_xpu', 'vllm::olmo_hybrid_gdn_full_forward', 'vllm::kda_attention', 'vllm::sparse_attn_indexer', 'vllm::rocm_aiter_sparse_attn_indexer', 'vllm::deepseek_v4_attention', 'vllm::unified_kv_cache_update', 'vllm::unified_mla_kv_cache_update'], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'compile_sizes': [], 'compile_ranges_endpoints': [2048], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'size_asserts': True, 'alignment_asserts': True, 'scalar_asserts': True, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': False, 'fuse_act_quant': False, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False, 'fuse_rope_kvcache_cat_mla': False, 'fuse_act_padding': False}, 'max_cudagraph_capture_size': 512, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': False, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native']), enable_flashinfer_autotune=True, moe_backend='auto', linear_backend='auto')
+(EngineCore pid=426) WARNING 06-11 02:56:22 [logger.py:305] VLLM_TRACE_FUNCTION is enabled. It will record every function executed by Python. This will slow down the code. It is suggested to be used for debugging hang or crashes only.
+(EngineCore pid=426) INFO 06-11 02:56:22 [logger.py:310] Trace frame log is saved to /tmp/root/vllm/vllm-instance-1781146571878339242/VLLM_TRACE_FUNCTION_for_process_426_thread_140520876212992_at_2026-06-11_02:56:22.918261.log
+(APIServer pid=58) DEBUG 06-11 02:56:32 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 02:56:42 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 02:56:52 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(EngineCore pid=426) DEBUG 06-11 02:56:54 [utils/import_utils.py:73] Loading module triton_kernels from /usr/local/lib/python3.12/dist-packages/vllm/third_party/triton_kernels/__init__.py.
+(EngineCore pid=426) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+(EngineCore pid=426) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+(APIServer pid=58) DEBUG 06-11 02:57:02 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(EngineCore pid=426) DEBUG 06-11 02:57:08 [config/kernel.py:85] Setting IR op priority for rms_norm to ['native']
+(EngineCore pid=426) DEBUG 06-11 02:57:08 [ir/op.py:416] Priority for vllm.ir.rms_norm set to ['native']
+(EngineCore pid=426) DEBUG 06-11 02:57:08 [config/kernel.py:85] Setting IR op priority for fused_add_rms_norm to ['native']
+(EngineCore pid=426) DEBUG 06-11 02:57:08 [ir/op.py:416] Priority for vllm.ir.fused_add_rms_norm set to ['native']
+(EngineCore pid=426) DEBUG 06-11 02:57:08 [distributed/parallel_state.py:1378] world_size=1 rank=0 local_rank=0 distributed_init_method=tcp://10.41.0.4:49697 backend=nccl
+(EngineCore pid=426) INFO 06-11 02:57:08 [distributed/parallel_state.py:1422] world_size=1 rank=0 local_rank=0 distributed_init_method=tcp://10.41.0.4:49697 backend=nccl
+(EngineCore pid=426) DEBUG 06-11 02:57:08 [distributed/parallel_state.py:1482] Detected 1 nodes in the distributed environment
+(EngineCore pid=426) INFO 06-11 02:57:08 [distributed/parallel_state.py:1735] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank N/A, EPLB rank N/A
+(EngineCore pid=426) DEBUG 06-11 02:57:08 [v1/worker/gpu_worker.py:301] worker init memory snapshot: torch_peak=0.0GiB, free_memory=44.08GiB, total_memory=44.34GiB, cuda_memory=0.26GiB, torch_memory=0.0GiB, non_torch_memory=0.26GiB, timestamp=1781146628.9919472, auto_measure=True
+(EngineCore pid=426) DEBUG 06-11 02:57:08 [v1/worker/gpu_worker.py:302] worker requested memory: 40.79GiB
+(EngineCore pid=426) DEBUG 06-11 02:57:10 [compilation/decorators.py:221] Inferred dynamic dimensions for forward method of <class 'vllm.model_executor.models.deepseek_v2.DeepseekV2Model'>: ['input_ids', 'positions', 'intermediate_tensors', 'inputs_embeds']
+(EngineCore pid=426) DEBUG 06-11 02:57:10 [compilation/decorators.py:221] Inferred dynamic dimensions for forward method of <class 'vllm.model_executor.models.deepseek_eagle3.DeepseekV2Eagle3Model'>: ['input_ids', 'positions', 'hidden_states', 'input_embeds']
+(EngineCore pid=426) DEBUG 06-11 02:57:10 [compilation/decorators.py:221] Inferred dynamic dimensions for forward method of <class 'vllm.model_executor.models.qwen3_dflash.DFlashQwen3Model'>: ['input_ids', 'positions', 'input_embeds']
+(EngineCore pid=426) DEBUG 06-11 02:57:11 [compilation/decorators.py:221] Inferred dynamic dimensions for forward method of <class 'vllm.v1.spec_decode.ngram_proposer_gpu.NgramGPUKernel'>: ['num_tokens_no_spec', 'token_ids_gpu', 'combined_mask']
+(EngineCore pid=426) INFO 06-11 02:57:11 [v1/sample/ops/topk_topp_sampler.py:45] Using FlashInfer for top-p & top-k sampling.
+(EngineCore pid=426) DEBUG 06-11 02:57:11 [v1/sample/logits_processor/__init__.py:63] No logitsprocs plugins installed (group vllm.logits_processors).
+(EngineCore pid=426) DEBUG 06-11 02:57:11 [model_executor/offloader/base.py:121] Offloader set to NoopOffloader (no offloading).
+(EngineCore pid=426) INFO 06-11 02:57:11 [v1/worker/gpu_model_runner.py:5037] Starting to load model /model/Qwen2.5-1.5B-Instruct...
+(EngineCore pid=426) DEBUG 06-11 02:57:12 [platforms/cuda.py:337] Some attention backends are not valid for cuda with AttentionSelectorConfig(head_size=128, dtype=torch.bfloat16, kv_cache_dtype=auto, block_size=None, use_mla=False, has_sink=False, use_sparse=False, use_mm_prefix=False, use_per_head_quant_scales=False, attn_type=AttentionType.DECODER, use_non_causal=False, use_batch_invariant=False). Reasons: {TURBOQUANT: [kv_cache_dtype not supported]}.
+(EngineCore pid=426) INFO 06-11 02:57:12 [platforms/cuda.py:378] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].
+(EngineCore pid=426) INFO 06-11 02:57:12 [v1/attention/backends/flash_attn.py:636] Using FlashAttention version 2
+(APIServer pid=58) DEBUG 06-11 02:57:12 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(EngineCore pid=426) DEBUG 06-11 02:57:22 [compilation/backends.py:107] Using InductorStandaloneAdaptor
+(APIServer pid=58) DEBUG 06-11 02:57:22 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(EngineCore pid=426) DEBUG 06-11 02:57:24 [config/compilation.py:1277] enabled custom ops: Counter()
+(EngineCore pid=426) DEBUG 06-11 02:57:24 [config/compilation.py:1278] disabled custom ops: Counter({'rms_norm': 57, 'silu_and_mul': 28, 'rotary_embedding': 1, 'apply_rotary_emb': 1})
+(EngineCore pid=426) DEBUG 06-11 02:57:24 [model_executor/model_loader/base_loader.py:63] Loading weights on cuda ...
+(EngineCore pid=426) INFO 06-11 02:57:24 [model_executor/model_loader/weight_utils.py:922] Filesystem type for checkpoints: EXT4. Checkpoint size: 2.88 GiB. Available RAM: 216.68 GiB.
+(EngineCore pid=426) INFO 06-11 02:57:24 [model_executor/model_loader/weight_utils.py:945] Auto-prefetch is disabled because the filesystem (EXT4) is not a recognized network FS (NFS/Lustre). If you want to force prefetching, start vLLM with --safetensors-load-strategy=prefetch.
+Loading safetensors checkpoint shards:   0% Completed | 0/1 [00:00<?, ?it/s]
+Loading safetensors checkpoint shards: 100% Completed | 1/1 [00:03<00:00,  3.35s/it]
+Loading safetensors checkpoint shards: 100% Completed | 1/1 [00:03<00:00,  3.36s/it]
+(EngineCore pid=426)
+(EngineCore pid=426) INFO 06-11 02:57:28 [model_executor/model_loader/default_loader.py:397] Loading weights took 3.58 seconds
+(EngineCore pid=426) DEBUG 06-11 02:57:28 [model_executor/model_loader/base_loader.py:70] Peak GPU memory after loading weights: 2.98 GiB
+(EngineCore pid=426) INFO 06-11 02:57:30 [v1/worker/gpu_model_runner.py:5132] Model loading took 2.98 GiB memory and 17.781870 seconds
+(EngineCore pid=426) DEBUG 06-11 02:57:31 [v1/worker/gpu_model_runner.py:5686] ubatch_slices: None, ubatch_slices_padded: None
+(EngineCore pid=426) DEBUG 06-11 02:57:31 [compilation/decorators.py:593] Start compiling function <code object forward at 0x2cfc6590, file "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/qwen2.py", line 389>
+(APIServer pid=58) DEBUG 06-11 02:57:32 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 02:57:42 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 02:57:52 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 02:58:02 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 02:58:12 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 02:58:23 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 02:58:33 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 02:58:43 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 02:58:53 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 02:59:03 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 02:59:13 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 02:59:23 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 02:59:33 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 02:59:43 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 02:59:53 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 03:00:03 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 03:00:13 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 03:00:23 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 03:00:33 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 03:00:43 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 03:00:53 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 03:01:03 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 03:01:13 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 03:01:23 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 03:01:33 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 03:01:43 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 03:01:53 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 03:02:03 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 03:02:13 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(APIServer pid=58) DEBUG 06-11 03:02:23 [v1/engine/utils.py:1199] Waiting for 1 local, 0 remote core engine proc(s) to start.
+(base) root@k8s-a40-node02:~#
+```
+观察日志很久都没有正常启动服务, 请问这是什么原因, 应该如何修改
+
+从日志和配置来看, 服务并没有真正"死锁"或崩溃, 而是卡在了极致缓慢的模型编译(`torch.compile`)过程中.
+
+API Server 打印的 `Waiting for 1 local, 0 remote core engine proc(s) to start` 是因为后台的 `EngineCore`(进程 426)尚未完成启动初始化. 以下是具体的原因分析以及调整建议:
+
+---
+
+### 一、核心原因分析
+
+#### 1. 致命组合: `VLLM_TRACE_FUNCTION=1` 遇到了 `torch.compile`
+
+这是导致启动极慢的首要原因:
+* 在日志的 `02:57:31` 时刻, vLLM V1 引擎开始编译 Qwen2 的前向传播函数:
+    > `Start compiling function <code object forward at ... qwen2.py>`
+* vLLM v1 默认启用了编译模式(`'mode': <CompilationMode.VLLM_COMPILE: 3>`). `torch.compile` 在编译时需要利用 PyTorch Dynamo 动态追踪数万个 Python 内部函数调用、进行符号推理并生成中间代码.
+* 而环境变量 `VLLM_TRACE_FUNCTION=1` 会在 Python 解释器层面注册 `sys.settrace` 钩子, 记录 Python 执行的每一个栈帧和函数调用.
+* 当这两个机制相遇时, 原本需要 2–3 分钟的 PyTorch 编译过程, 其计算和 IO 开销会被放大 100 倍甚至 1000 倍以上, 导致编译模型 forward 函数可能需要数个小时才能完成, 从而表现为服务无限期"卡死".
+
+#### 2. `CUDA_LAUNCH_BLOCKING=1` 降低了硬件编译流水线效率
+
+该变量强制让所有 CUDA Kernel 同步执行. 在编译阶段(尤其是 Triton 生成 Kernel 并测试、Autotuning 时), 它会严重阻碍 CPU 与 GPU 的异步重叠(Overlap), 进一步拉长启动时间.
+
+#### 3. 单卡(World Size = 1)下启用了高开销的 NCCL 与 Triton 调试
+
+日志中显示: `world_size=1 rank=0 local_rank=0`.
+在单卡部署时, 根本不存在多卡分布式通信, 因此不需要初始化 NCCL 分布式组, 设置 `NCCL_DEBUG=TRACE` 虽然不会报错, 但没有排查意义; 同时 `TRITON_DEBUG=1` 会让 Triton 编译器将大量的中间代码、汇编落盘, 减慢 IO.
+
+---
+
+### 二、如何修改与调整
+
+根据您的具体诉求, 建议采取以下调整方案:
+
+#### 方案 A: 保留适度监控, 实现快速启动(推荐)
+
+如果您希望在保留必要可观测性(如请求日志、Token 详情、性能指标、API 响应)的同时让服务能在 1–3 分钟内正常启动, 请卸载超高开销的追踪变量, 执行如下命令:
+
+```bash
+# 1. 移除极高开销的 Trace 和同步变量
+unset VLLM_TRACE_FUNCTION
+unset CUDA_LAUNCH_BLOCKING
+unset NCCL_DEBUG
+unset NCCL_DEBUG_SUBSYS
+unset TRITON_DEBUG
+unset TRITON_PRINT_AUTOTUNING
+unset TORCH_DISTRIBUTED_DEBUG
+
+# 2. 保留对排查业务非常有帮助的 Debug 和可观测性变量
+export VLLM_LOGGING_LEVEL=DEBUG
+export VLLM_DEBUG_LOG_API_SERVER_RESPONSE=TRUE
+export TORCH_SHOW_CPP_STACKTRACES=1
+
+# 3. 启动服务(保留您的 CLI 参数, 因为这些参数本身并不会导致严重挂起)
+vllm serve \
+/model/Qwen2.5-1.5B-Instruct \
+--served-model-name Qwen2.5-1.5B-Instruct \
+--trust-remote-code \
+--use-tqdm-on-load \
+--host 0.0.0.0 \
+--port 8000 \
+--api-key my_secret_token_123 my_secret_token_456 \
+--enable-log-requests \
+--enable-log-outputs \
+--no-disable-uvicorn-access-log \
+--uvicorn-log-level debug \
+--aggregate-engine-logging \
+--enable-logging-iteration-details \
+--log-error-stack \
+--cudagraph-metrics \
+--kv-cache-metrics \
+--enable-mfu-metrics \
+--enable-log-deltas \
+--enable-prompt-tokens-details \
+--enable-tokenizer-info-endpoint \
+--enable-server-load-tracking \
+--enable-force-include-usage \
+--shutdown-timeout 30
+```
+提示: 即使移除了追踪变量, 由于 vLLM v1 需要首次编译模型(`torch.compile`), 在出现 `Start compiling function` 日志后, 由于需要生成优化的 GPU 算子, 可能仍需等待 1–2 分钟, 请耐心观察, 后续启动将直接命中编译缓存而变快.
+
+#### 方案 B: 临时跳过编译, 追求"秒级"极速启动(用于快速验证)
+
+如果您只是想快速验证容器环境、显卡驱动、模型路径或 API 鉴权(`--api-key`)是否配置正确, 而不关心极限吞吐性能, 可以通过添加 `--enforce-eager` 参数来完全关闭编译模式:
+
+* 在上述 方案 A 的启动命令末尾增加:
+    ```bash
+    --enforce-eager
+    ```
+* 效果: 跳过 `torch.compile` 编译和 CUDA Graph 捕获阶段, 模型将以 PyTorch Eager 模式直接运行, 服务通常能在 10–20 秒内启动完毕并监听 8000 端口.
+
+--------------------------------------------------------------------------------------------------
+
+Q: 假设你是一位精通 LLM, k8s 相关的高级研究人员, 我使用如下参数和环境变量启动 vllm serve:
+```bash
+export VLLM_LOGGING_LEVEL=DEBUG
+export VLLM_DEBUG_LOG_API_SERVER_RESPONSE=TRUE
+export TORCH_SHOW_CPP_STACKTRACES=1
+
+vllm serve \
+/model/Qwen2.5-1.5B-Instruct \
+--served-model-name Qwen2.5-1.5B-Instruct \
+--trust-remote-code \
+--use-tqdm-on-load \
+--host 0.0.0.0 \
+--port 8000 \
+--api-key my_secret_token_123 my_secret_token_456 \
+--enable-log-requests \
+--enable-log-outputs \
+--no-disable-uvicorn-access-log \
+--uvicorn-log-level debug \
+--aggregate-engine-logging \
+--enable-logging-iteration-details \
+--log-error-stack \
+--cudagraph-metrics \
+--kv-cache-metrics \
+--enable-mfu-metrics \
+--enable-log-deltas \
+--enable-prompt-tokens-details \
+--enable-tokenizer-info-endpoint \
+--enable-server-load-tracking \
+--enable-force-include-usage \
+--shutdown-timeout 30
+
+```
+然后我使用 curl 命令发送请求, 如下:
+```bash
+curl -X POST http://127.0.0.1:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer my_secret_token_123" \
+    -d '{
+        "model": "Qwen2.5-1.5B-Instruct",
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Who won the world series in 2020?"}
+        ]
+    }'
+```
+
+返回如下:
+```
+{
+    "id": "chatcmpl-affe23012332c9b5",
+    "object": "chat.completion",
+    "created": 1781148378,
+    "model": "Qwen2.5-1.5B-Instruct",
+    "choices": [
+        {
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": "The New York Yankees won the World Series in 2020, defeating the Houston Astros in seven games.",
+                "refusal": null,
+                "annotations": null,
+                "audio": null,
+                "function_call": null,
+                "tool_calls": [
+
+                ],
+                "reasoning": null
+            },
+            "logprobs": null,
+            "finish_reason": "stop",
+            "stop_reason": null,
+            "token_ids": null,
+            "routed_experts": null
+        }
+    ],
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.22.0-e685911b",
+    "usage": {
+        "prompt_tokens": 31,
+        "total_tokens": 55,
+        "completion_tokens": 24,
+        "prompt_tokens_details": null
+    },
+    "prompt_logprobs": null,
+    "prompt_token_ids": null,
+    "prompt_text": null,
+    "kv_transfer_params": null
+}
+
+```
+在返回的内容中没有思考的内容, 同时工具调用结果也没有, 我应该使用什么模型, 发送什么样的请求才能实现工具调用和带思考的回答
+
+在您当前的返回结果中, `tool_calls` 为空且 `reasoning` 为 `null`, 这并非由于服务配置异常, 而是由于请求参数配置以及模型类型选用不匹配导致的.
+
+---
+
+### 一、为什么当前没有"工具调用"结果?
+
+#### 原因:
+
+在您发送的 `curl` 请求体(JSON)中, 并没有向模型声明任何可用的工具(`tools` 字段).
+虽然 `Qwen2.5-1.5B-Instruct` 拥有极佳的工具调用能力, 但如果您不提供工具的定义 Schema, 它便无法判断当前是否需要调用工具, 只能作为普通对话模型直接进行文本回复.
+
+#### 如何修改请求:
+如果您想测试工具调用, 需要在请求中添加 `tools` 参数, 并提出一个需要使用该工具才能回答的问题.
+
+修改后的 `curl` 请求示例:
+```bash
+curl -X POST http://127.0.0.1:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer my_secret_token_123" \
+    -d '{"model":"Qwen2.5-1.5B-Instruct","messages":[{"role":"user","content":"帮我查一下东京现在的天气怎么样?"}],"tools":[{"type":"function","function":{"name":"get_current_weather","description":"获取指定城市的实时天气情况","parameters":{"type":"object","properties":{"location":{"type":"string","description":"城市或地区名称, 例如 东京, 北京"}},"required":["location"]}}}]}'
+```
+发送该请求后, 您将在返回的 `choices[0].message.tool_calls` 数组中看到模型解析出的函数调用参数.
+
+---
+
+### 二、为什么当前没有"思考(Reasoning)"内容?
+
+#### 原因:
+1.  模型不支持: `Qwen2.5-1.5B-Instruct` 是通用的指令/对话模型, 并不是专门的深度思考(Reasoning)模型(它不会主动生成带有 `<think>...</think>` 标签的思维链).
+2.  缺少推理解析器(Reasoning Parser): 在启动 `vllm serve` 时, 您没有配置推理解析器参数, 使得 vLLM 无法从底层输出中拦截并剥离出思考逻辑, 因此返回的 `"reasoning"` 字段为 `null`.
+
+---
+
+### 三、如何实现"带思考"的回答, 甚至"思考 + 工具调用"?
+
+若要让返回结果中填充 `"reasoning"`(或在部分旧版客户端中映射为 `"reasoning_content"`), 建议按照以下步骤调整:
+
+#### 1. 选用合适的模型
+* 如果您只需要"思考/思维链"能力(且模型较为轻量):
+    * 推荐选用: `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B` 或 `deepseek-ai/DeepSeek-R1-Distill-Qwen-8B`.
+    * 注意: DeepSeek-R1 官方及其蒸馏系列模型, 在 vLLM 的标准配置下通常不直接支持原生工具调用.
+* 如果您需要"思考"与"工具调用"同时兼顾:
+    * 推荐选用: `Qwen3-32B` 或 `Qwen3` 带有推理能力的系列模型. 这类模型在架构上既支持生成思维链, 又支持规范的工具调用.
+
+#### 2. 修改 vLLM 启动参数(启用推理解析器)
+在启动服务时, 必须传入 `--reasoning-parser` 参数, 指定具体的推理解析器(例如针对 R1 蒸馏或 Qwen 模型使用 `deepseek_r1`):
+
+```bash
+# 以启动 1.5B 的 R1 蒸馏模型为例
+vllm serve \
+deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
+--served-model-name DeepSeek-R1-Distill-Qwen-1.5B \
+--trust-remote-code \
+--host 0.0.0.0 \
+--port 8000 \
+--reasoning-parser deepseek_r1 \
+--api-key my_secret_token_123 \
+...(其他您原有的监控与日志参数)
+```
+
+#### 3. 发送带思考的请求
+模型和参数部署完毕后, 您可以直接发送需要复杂推理的问题(例如经典逻辑题):
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer my_secret_token_123" \
+    -d '{"model":"DeepSeek-R1-Distill-Qwen-1.5B","messages":[{"role":"user","content":"9.11 和 9.8 哪个数字更大? "}]}'
+```
+
+#### 4. 预期的返回结构
+在配置了 `--reasoning-parser` 之后, vLLM 会把模型输出在 `<think>` 标签内的文本剥离出来放入独立的字段. 返回的 JSON 结构中:
+* `choices[0].message.reasoning`: 包含详细的思考步骤(思维链).
+* `choices[0].message.content`: 仅包含最终纯净的答案(如"9.8 更大..."), 从而完美实现了思考与回答的解耦.
+
+--------------------------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------------------------
+
+
 ```bash
 docker run -ti --rm \
 --entrypoint /bin/bash \
 --security-opt seccomp=unconfined \
 --gpus '"device=1, 7"' \
---name vllm-client \
+--name vllm-server \
 vllm/vllm-openai:v0.22.0-cu129-ubuntu2404
 
 docker run -ti --rm \
 --entrypoint /usr/bin/env \
 --security-opt seccomp=unconfined \
 --gpus '"device=1, 7"' \
---name vllm-client \
+--name vllm-server \
 vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 bash
 
 python3 -m vllm.entrypoints.openai.api_server --help=all
