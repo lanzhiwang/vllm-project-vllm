@@ -2,7 +2,6 @@
 
 echo "Warning: LMCache disaggregated prefill support for vLLM v1 is experimental and subject to change."
 
-
 PIDS=()
 
 # Switch to the directory of the current script
@@ -22,10 +21,10 @@ check_hf_token() {
 
 check_num_gpus() {
     # can you check if the number of GPUs are >=2 via nvidia-smi/rocm-smi?
-    if ! which rocm-smi > /dev/null 2>&1; then
-	num_gpus=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+    if ! which rocm-smi >/dev/null 2>&1; then
+        num_gpus=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
     else
-	num_gpus=$(rocm-smi --showid | grep -c Instinct)
+        num_gpus=$(rocm-smi --showid | grep -c Instinct)
     fi
 
     if [ "$num_gpus" -lt 2 ]; then
@@ -38,7 +37,7 @@ check_num_gpus() {
 
 ensure_python_library_installed() {
     echo "Checking if $1 is installed..."
-    if ! python3 -c "import $1" > /dev/null 2>&1; then
+    if ! python3 -c "import $1" >/dev/null 2>&1; then
         if [ "$1" == "nixl" ]; then
             echo "$1 is not installed. Please refer to https://github.com/ai-dynamo/nixl for installation."
         else
@@ -52,34 +51,33 @@ ensure_python_library_installed() {
 
 cleanup() {
     echo "Stopping everything…"
-    trap - INT TERM        # prevent re-entrancy
-    kill -- -$$            # negative PID  ==  “this whole process-group”
-    wait                   # reap children so we don't leave zombies
+    trap - INT TERM # prevent re-entrancy
+    kill -- -$$     # negative PID  ==  “this whole process-group”
+    wait            # reap children so we don't leave zombies
     exit 0
 }
 
 wait_for_server() {
-  local port=$1
-  local timeout_seconds=1200
-  local start_time=$(date +%s)
+    local port=$1
+    local timeout_seconds=1200
+    local start_time=$(date +%s)
 
-  echo "Waiting for server on port $port..."
+    echo "Waiting for server on port $port..."
 
-  while true; do
-    if curl -s "localhost:${port}/v1/completions" > /dev/null; then
-      return 0
-    fi
+    while true; do
+        if curl -s "localhost:${port}/v1/completions" >/dev/null; then
+            return 0
+        fi
 
-    local now=$(date +%s)
-    if (( now - start_time >= timeout_seconds )); then
-      echo "Timeout waiting for server"
-      return 1
-    fi
+        local now=$(date +%s)
+        if ((now - start_time >= timeout_seconds)); then
+            echo "Timeout waiting for server"
+            return 1
+        fi
 
-    sleep 1
-  done
+        sleep 1
+    done
 }
-
 
 main() {
     check_hf_token
@@ -102,8 +100,8 @@ main() {
     prefiller_pid=$!
     PIDS+=("$prefiller_pid")
 
-    bash disagg_vllm_launcher.sh decoder  \
-        > >(tee decoder.log)  2>&1 &
+    bash disagg_vllm_launcher.sh decoder \
+        > >(tee decoder.log) 2>&1 &
     decoder_pid=$!
     PIDS+=("$decoder_pid")
 
@@ -113,8 +111,8 @@ main() {
         --prefiller-host localhost \
         --prefiller-port 8100 \
         --decoder-host localhost \
-        --decoder-port 8200  \
-        > >(tee proxy.log)    2>&1 &
+        --decoder-port 8200 \
+        > >(tee proxy.log) 2>&1 &
     proxy_pid=$!
     PIDS+=("$proxy_pid")
 

@@ -19,7 +19,7 @@ MAX_EMBED_LEN=${MAX_EMBED_LEN:-3072000}
 API_KEY=${API_KEY:-"your-api-key"}
 
 # Enhanced pooling configuration with model-specific defaults
-POOLING_TYPE=${POOLING_TYPE:-"auto"}  # auto, MEAN, CLS, LAST
+POOLING_TYPE=${POOLING_TYPE:-"auto"} # auto, MEAN, CLS, LAST
 export VLLM_ENABLE_CHUNKED_PROCESSING=true
 export CUDA_VISIBLE_DEVICES=2,3,4,5
 
@@ -33,27 +33,27 @@ export VLLM_WORKER_MULTIPROC_METHOD=spawn
 get_optimal_pooling_type() {
     local model="$1"
     case "$model" in
-        *"e5-"* | *"multilingual-e5"*)
-            echo "MEAN"  # E5 series native pooling
-            ;;
-        *"bge-"*)
-            echo "CLS"   # BGE series native pooling
-            ;;
-        *"gte-"*)
-            echo "LAST"  # GTE series native pooling
-            ;;
-        *"sentence-t5"* | *"st5"*)
-            echo "MEAN"  # Sentence-T5 native pooling
-            ;;
-        *"jina-embeddings"*)
-            echo "MEAN"  # Jina embeddings native pooling
-            ;;
-        *"Qwen"*"Embedding"*)
-            echo "LAST"  # Qwen embeddings native pooling
-            ;;
-        *)
-            echo "MEAN"  # Default native pooling for unknown models
-            ;;
+    *"e5-"* | *"multilingual-e5"*)
+        echo "MEAN" # E5 series native pooling
+        ;;
+    *"bge-"*)
+        echo "CLS" # BGE series native pooling
+        ;;
+    *"gte-"*)
+        echo "LAST" # GTE series native pooling
+        ;;
+    *"sentence-t5"* | *"st5"*)
+        echo "MEAN" # Sentence-T5 native pooling
+        ;;
+    *"jina-embeddings"*)
+        echo "MEAN" # Jina embeddings native pooling
+        ;;
+    *"Qwen"*"Embedding"*)
+        echo "LAST" # Qwen embeddings native pooling
+        ;;
+    *)
+        echo "MEAN" # Default native pooling for unknown models
+        ;;
     esac
 }
 
@@ -75,7 +75,7 @@ echo "   - Cross-chunk Aggregation: MEAN (automatic)"
 echo ""
 
 # Validate GPU availability
-if command -v nvidia-smi &> /dev/null; then
+if command -v nvidia-smi &>/dev/null; then
     gpu_count=$(nvidia-smi --list-gpus | wc -l)
     echo "🖥️  Available GPUs: $gpu_count"
     if [ "$GPU_COUNT" -gt "$gpu_count" ]; then
@@ -100,14 +100,14 @@ POOLER_CONFIG="{\"pooling_type\": \"$POOLING_TYPE\", \"use_activation\": true, \
 
 # Start vLLM server with enhanced chunked processing
 vllm serve "$MODEL_NAME" \
-  --tensor-parallel-size "$GPU_COUNT" \
-  --enforce-eager \
-  --pooler-config "$POOLER_CONFIG" \
-  --served-model-name "${MODEL_CODE}" \
-  --api-key "$API_KEY" \
-  --trust-remote-code \
-  --port "$PORT" \
-  --host 0.0.0.0
+    --tensor-parallel-size "$GPU_COUNT" \
+    --enforce-eager \
+    --pooler-config "$POOLER_CONFIG" \
+    --served-model-name "${MODEL_CODE}" \
+    --api-key "$API_KEY" \
+    --trust-remote-code \
+    --port "$PORT" \
+    --host 0.0.0.0
 
 echo ""
 echo "✅ vLLM Embedding Server started successfully!"
@@ -133,4 +133,4 @@ echo ""
 echo "🔧 Advanced usage:"
 echo "   - Set POOLING_TYPE=MEAN|CLS|LAST to override auto-detection"
 echo "   - Set MAX_EMBED_LEN to adjust maximum input length"
-echo "   - All pooling types use MEAN aggregation across chunks" 
+echo "   - All pooling types use MEAN aggregation across chunks"
