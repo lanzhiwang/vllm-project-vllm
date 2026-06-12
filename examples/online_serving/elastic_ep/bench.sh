@@ -10,42 +10,42 @@ REQUEST_RATE=5
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --model)
-            MODEL_NAME="$2"
-            shift 2
-            ;;
-        --local-model)
-            MODEL_NAME=$LOCAL_MODEL_PATH
-            shift
-            ;;
-        --host)
-            HOST="$2"
-            shift 2
-            ;;
-        --port)
-            PORT="$2"
-            shift 2
-            ;;
-        --num-prompts)
-            NUM_PROMPTS="$2"
-            shift 2
-            ;;
-        --request-rate)
-            REQUEST_RATE="$2"
-            shift 2
-            ;;
-        -h|--help)
-            echo "Usage: $0 [OPTIONS]"
-            echo "Options:"
-            echo "  --model MODEL_NAME           Set model name or path (default: deepseek-ai/DeepSeek-V2-Lite)"
-            echo "  --local-model                Use local model path (convenience option)"
-            exit 0
-            ;;
-        *)
-            echo "Unknown option: $1"
-            echo "Use -h or --help for usage information"
-            exit 1
-            ;;
+    --model)
+        MODEL_NAME="$2"
+        shift 2
+        ;;
+    --local-model)
+        MODEL_NAME=$LOCAL_MODEL_PATH
+        shift
+        ;;
+    --host)
+        HOST="$2"
+        shift 2
+        ;;
+    --port)
+        PORT="$2"
+        shift 2
+        ;;
+    --num-prompts)
+        NUM_PROMPTS="$2"
+        shift 2
+        ;;
+    --request-rate)
+        REQUEST_RATE="$2"
+        shift 2
+        ;;
+    -h | --help)
+        echo "Usage: $0 [OPTIONS]"
+        echo "Options:"
+        echo "  --model MODEL_NAME           Set model name or path (default: deepseek-ai/DeepSeek-V2-Lite)"
+        echo "  --local-model                Use local model path (convenience option)"
+        exit 0
+        ;;
+    *)
+        echo "Unknown option: $1"
+        echo "Use -h or --help for usage information"
+        exit 1
+        ;;
     esac
 done
 

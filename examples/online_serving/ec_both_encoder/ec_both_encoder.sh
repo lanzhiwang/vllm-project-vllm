@@ -23,8 +23,8 @@ trap cleanup EXIT INT TERM
 wait_for_server() {
     local deadline=$((SECONDS + TIMEOUT))
     echo "Waiting for server on port $PORT..."
-    while (( SECONDS < deadline )); do
-        if curl -sf "http://localhost:${PORT}/v1/models" > /dev/null 2>&1; then
+    while ((SECONDS < deadline)); do
+        if curl -sf "http://localhost:${PORT}/v1/models" >/dev/null 2>&1; then
             echo "Server ready."
             return 0
         fi
@@ -41,7 +41,7 @@ mkdir -p "$EC_SHARED_STORAGE_PATH"
 # Start server with ec_both
 ###############################################################################
 CUDA_VISIBLE_DEVICES="$GPU" \
-vllm serve "$MODEL" \
+    vllm serve "$MODEL" \
     --port "$PORT" \
     --enforce-eager \
     --ec-transfer-config '{

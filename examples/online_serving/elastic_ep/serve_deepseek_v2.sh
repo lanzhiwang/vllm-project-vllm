@@ -9,46 +9,46 @@ MODEL_NAME="deepseek-ai/DeepSeek-V2-Lite"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --dp)
-            DATA_PARALLEL_SIZE="$2"
-            shift 2
-            ;;
-        --re)
-            REDUNDANT_EXPERTS="$2"
-            shift 2
-            ;;
-        --host)
-            HOST="$2"
-            shift 2
-            ;;
-        --port)
-            PORT="$2"
-            shift 2
-            ;;
-        --model)
-            MODEL_NAME="$2"
-            shift 2
-            ;;
-        --local-model)
-            MODEL_NAME=$LOCAL_MODEL_PATH
-            shift
-            ;;
-        -h|--help)
-            echo "Usage: $0 [OPTIONS]"
-            echo "Options:"
-            echo "  --dp SIZE                    Set data parallel size (default: 4)"
-            echo "  --re SIZE                    Set redundant experts (default: 0)"
-            echo "  --host HOST                  Set host address (default: 0.0.0.0)"
-            echo "  --port PORT                  Set port number (default: 8006)"
-            echo "  --model MODEL_NAME           Set model name or path"
-            echo "  -h, --help                   Show this help message"
-            exit 0
-            ;;
-        *)
-            echo "Unknown option: $1"
-            echo "Use -h or --help for usage information"
-            exit 1
-            ;;
+    --dp)
+        DATA_PARALLEL_SIZE="$2"
+        shift 2
+        ;;
+    --re)
+        REDUNDANT_EXPERTS="$2"
+        shift 2
+        ;;
+    --host)
+        HOST="$2"
+        shift 2
+        ;;
+    --port)
+        PORT="$2"
+        shift 2
+        ;;
+    --model)
+        MODEL_NAME="$2"
+        shift 2
+        ;;
+    --local-model)
+        MODEL_NAME=$LOCAL_MODEL_PATH
+        shift
+        ;;
+    -h | --help)
+        echo "Usage: $0 [OPTIONS]"
+        echo "Options:"
+        echo "  --dp SIZE                    Set data parallel size (default: 4)"
+        echo "  --re SIZE                    Set redundant experts (default: 0)"
+        echo "  --host HOST                  Set host address (default: 0.0.0.0)"
+        echo "  --port PORT                  Set port number (default: 8006)"
+        echo "  --model MODEL_NAME           Set model name or path"
+        echo "  -h, --help                   Show this help message"
+        exit 0
+        ;;
+    *)
+        echo "Unknown option: $1"
+        echo "Use -h or --help for usage information"
+        exit 1
+        ;;
     esac
 done
 
