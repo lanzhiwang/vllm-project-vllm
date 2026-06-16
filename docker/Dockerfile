@@ -510,6 +510,15 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
         export VLLM_DOCKER_BUILD_CONTEXT=1 && \
         python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38; \
     fi
+# [csrc-build 13/13] RUN --mount=type=cache,target=/root/.cache/ccache --mount=type=cache,target=/root/.cache/uv set -eux &&
+# if [ "0" != "1" ]; then
+#     rm -rf .deps &&
+#     mkdir -p .deps &&
+#     export VLLM_USE_PRECOMPILED="" &&
+#     export VLLM_PRECOMPILED_WHEEL_COMMIT="" &&
+#     export VLLM_DOCKER_BUILD_CONTEXT=1 &&
+#     python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38;
+# fi
 
 #################### CSRC BUILD IMAGE ####################
 
@@ -546,6 +555,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         ${DEEPEP_COMMIT_HASH:+--deepep-ref "$DEEPEP_COMMIT_HASH"} \
         ${NVSHMEM_VER:+--nvshmem-ver "$NVSHMEM_VER"} && \
     find /tmp/ep_kernels_workspace/nvshmem -name '*.a' -delete
+# [extensions-build 3/3] RUN --mount=type=cache,target=/root/.cache/uv set -eux &&
+# mkdir -p /tmp/ep_kernels_workspace/dist &&
+# export TORCH_CUDA_ARCH_LIST='9.0a 10.0a' &&
+# /tmp/install_python_libraries.sh --workspace /tmp/ep_kernels_workspace --mode wheel --deepep-ref "73b6ea4" ${NVSHMEM_VER:+--nvshmem-ver "$NVSHMEM_VER"} &&
+# find /tmp/ep_kernels_workspace/nvshmem -name '*.a' -delete
+
 #################### EXTENSIONS BUILD IMAGE ####################
 
 #################### WHEEL BUILD IMAGE ####################
@@ -572,6 +587,7 @@ ENV UV_INDEX_STRATEGY="unsafe-best-match"
 ENV UV_LINK_MODE=copy
 
 RUN --mount=type=cache,target=/root/.cache/uv \
+    set -eux && \
     if [ "${PYTORCH_NIGHTLY}" = "1" ]; then \
         echo "Installing build requirements without torch..." \
         && python3 use_existing_torch.py --prefix \
@@ -585,6 +601,20 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.'); \
     fi
 
+# [build  4/13] RUN --mount=type=cache,target=/root/.cache/uv
+# if [ "0" = "1" ]; then
+#     echo "Installing build requirements without torch..." &&
+#     python3 use_existing_torch.py --prefix &&
+#     uv pip install --python /opt/venv/bin/python3 -r requirements/build/cuda.txt &&
+#     echo "Installing torch nightly..." &&
+#     uv pip install --python /opt/venv/bin/python3 $(cat torch_lib_versions.txt | grep -i "^torch=" | xargs) --pre --index-url https://download.pytorch.org/whl/nightly/cu$(echo 13.0.2 | cut -d. -f1,2 | tr -d '.');
+# else
+#     echo "Installing build requirements..." &&
+#     uv pip install --python /opt/venv/bin/python3 -r requirements/build/cuda.txt --extra-index-url https://download.pytorch.org/whl/cu$(echo 13.0.2 | cut -d. -f1,2 | tr -d '.');
+# fi
+
+
+
 WORKDIR /workspace
 
 # Copy pre-built csrc wheel directly
@@ -593,6 +623,7 @@ COPY . .
 
 ARG GIT_REPO_CHECK=0
 RUN --mount=type=bind,source=.git,target=.git \
+    set -eux && \
     if [ "$GIT_REPO_CHECK" != "0" ]; then bash tools/check_repo.sh ; fi
 
 ARG vllm_target_device="cuda"
@@ -603,6 +634,7 @@ ENV VLLM_SKIP_PRECOMPILED_VERSION_SUFFIX=1
 
 # Use existing torch for nightly builds
 RUN --mount=type=cache,target=/root/.cache/uv \
+    set -eux && \
     if [ "${PYTORCH_NIGHTLY}" = "1" ]; then \
         python3 use_existing_torch.py --prefix; \
     fi
@@ -610,6 +642,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Build the vLLM wheel
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=.git,target=.git \
+    set -eux && \
     if [ "${vllm_target_device}" = "cuda" ]; then \
         export VLLM_PRECOMPILED_WHEEL_LOCATION=$(ls /precompiled-wheels/*.whl); \
     fi && \
@@ -624,7 +657,7 @@ COPY .buildkite/check-wheel-size.py check-wheel-size.py
 ARG VLLM_MAX_SIZE_MB=500
 ENV VLLM_MAX_SIZE_MB=$VLLM_MAX_SIZE_MB
 ARG RUN_WHEEL_CHECK=true
-RUN if [ "$RUN_WHEEL_CHECK" = "true" ]; then \
+RUN set -eux && if [ "$RUN_WHEEL_CHECK" = "true" ]; then \
         python3 check-wheel-size.py dist; \
     else \
         echo "Skipping wheel size check."; \
@@ -647,7 +680,7 @@ ENV UV_INDEX_STRATEGY="unsafe-best-match"
 ENV UV_LINK_MODE=copy
 
 # Install libnuma-dev, required by fastsafetensors (fixes #20384)
-RUN apt-get update && apt-get install -y --no-install-recommends libnuma-dev && rm -rf /var/lib/apt/lists/*
+RUN set -eux && apt-get update && apt-get install -y --no-install-recommends libnuma-dev && rm -rf /var/lib/apt/lists/*
 
 
 # We can specify the standard or nightly build of PyTorch
@@ -661,6 +694,7 @@ COPY requirements/dev.txt requirements/dev.txt
 COPY use_existing_torch.py use_existing_torch.py
 COPY --from=base /workspace/torch_lib_versions.txt torch_lib_versions.txt
 RUN --mount=type=cache,target=/root/.cache/uv \
+    set -eux && \
     if [ "${PYTORCH_NIGHTLY}" = "1" ]; then \
         echo "Installing dev requirements plus torch nightly..." \
         && python3 use_existing_torch.py --prefix \
@@ -692,11 +726,11 @@ WORKDIR /vllm-workspace
 
 
 # Python version string for paths (e.g., "312" for 3.12)
-RUN PYTHON_VERSION_STR=$(echo ${PYTHON_VERSION} | sed 's/\.//g') && \
+RUN set -eux && PYTHON_VERSION_STR=$(echo ${PYTHON_VERSION} | sed 's/\.//g') && \
     echo "export PYTHON_VERSION_STR=${PYTHON_VERSION_STR}" >> /etc/environment
 
 # Install Python and system dependencies
-RUN apt-get update -y \
+RUN set -eux && apt-get update -y \
     && apt-get install -y --no-install-recommends \
         software-properties-common \
         curl \
@@ -734,7 +768,7 @@ RUN apt-get update -y \
 
 # Install CUDA development tools for runtime JIT compilation
 # (FlashInfer, DeepGEMM, EP kernels all require compilation at runtime)
-RUN CUDA_VERSION_DASH=$(echo $CUDA_VERSION | cut -d. -f1,2 | tr '.' '-') && \
+RUN set -eux && CUDA_VERSION_DASH=$(echo $CUDA_VERSION | cut -d. -f1,2 | tr '.' '-') && \
     CUDA_VERSION_SHORT=$(echo $CUDA_VERSION | cut -d. -f1,2) && \
     apt-get update -y && \
     apt-get install -y --no-install-recommends --allow-change-held-packages \
@@ -780,6 +814,7 @@ ARG PYTORCH_CUDA_INDEX_BASE_URL
 COPY requirements/common.txt /tmp/common.txt
 COPY requirements/cuda.txt /tmp/requirements-cuda.txt
 RUN --mount=type=cache,target=/root/.cache/uv \
+    set -eux && \
     uv pip install --system -r /tmp/requirements-cuda.txt \
         --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.') && \
     rm /tmp/requirements-cuda.txt /tmp/common.txt
@@ -789,6 +824,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # From versions.json: .flashinfer.version
 ARG FLASHINFER_VERSION=0.6.8.post1
 RUN --mount=type=cache,target=/root/.cache/uv \
+    set -eux && \
     uv pip install --system flashinfer-jit-cache==${FLASHINFER_VERSION} \
         --extra-index-url https://flashinfer.ai/whl/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.') \
     && flashinfer show-config \
@@ -823,6 +859,7 @@ ARG BITSANDBYTES_VERSION_ARM64=0.42.0
 ARG TIMM_VERSION=">=1.0.17"
 ARG RUNAI_MODEL_STREAMER_VERSION=">=0.15.7"
 RUN --mount=type=cache,target=/root/.cache/uv \
+    set -eux && \
     if [ "$TARGETPLATFORM" = "linux/arm64" ]; then \
         BITSANDBYTES_VERSION="${BITSANDBYTES_VERSION_ARM64}"; \
     else \
@@ -848,6 +885,7 @@ ARG PYTORCH_NIGHTLY
 COPY --from=base /workspace/torch_lib_versions.txt torch_lib_versions.txt
 RUN --mount=type=bind,from=build,src=/workspace/dist,target=/vllm-workspace/dist \
     --mount=type=cache,target=/root/.cache/uv \
+    set -eux && \
     if [ "${PYTORCH_NIGHTLY}" = "1" ]; then \
         echo "Installing torch nightly..." \
         && uv pip install --system $(cat torch_lib_versions.txt | xargs) --pre \
@@ -862,6 +900,7 @@ RUN --mount=type=bind,from=build,src=/workspace/dist,target=/vllm-workspace/dist
     fi
 
 RUN --mount=type=cache,target=/root/.cache/uv \
+set -eux && \
 . /etc/environment && \
 uv pip list
 
@@ -871,6 +910,7 @@ ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 # Install EP kernels wheels (DeepEP) that have been built in the `build` stage
 RUN --mount=type=bind,from=build,src=/tmp/ep_kernels_workspace/dist,target=/vllm-workspace/ep_kernels/dist \
     --mount=type=cache,target=/root/.cache/uv \
+    set -eux && \
     uv pip install --system ep_kernels/dist/*.whl --verbose \
         --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.')
 
@@ -919,6 +959,7 @@ COPY requirements/dev.txt requirements/dev.txt
 COPY use_existing_torch.py use_existing_torch.py
 COPY --from=base /workspace/torch_lib_versions.txt torch_lib_versions.txt
 RUN --mount=type=cache,target=/root/.cache/uv \
+    set -eux && \
     CUDA_MAJOR="${CUDA_VERSION%%.*}"; \
     if [ "$CUDA_MAJOR" -ge 12 ]; then \
         if [ "${PYTORCH_NIGHTLY}" = "1" ]; then \
@@ -939,6 +980,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # install development dependencies (for testing)
 RUN --mount=type=cache,target=/root/.cache/uv \
+    set -eux && \
     uv pip install --system -e tests/vllm_test_utils
 
 # enable fast downloads from hf (for testing)
@@ -976,6 +1018,7 @@ ARG torch_cuda_arch_list='7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0+PTX'
 ENV TORCH_CUDA_ARCH_LIST=${torch_cuda_arch_list}
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=requirements/kv_connectors.txt,target=/tmp/kv_connectors.txt,ro \
+    set -eux && \
     CUDA_MAJOR="${CUDA_VERSION%%.*}"; \
     CUDA_VERSION_DASH=$(echo $CUDA_VERSION | cut -d. -f1,2 | tr '.' '-'); \
     CUDA_HOME=/usr/local/cuda; \
