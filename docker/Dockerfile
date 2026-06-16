@@ -445,6 +445,37 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         && sccache --show-stats; \
     fi
 
+# [csrc-build 12/13] RUN --mount=type=cache,target=/root/.cache/uv --mount=type=secret,id=aws-credentials,target=/root/.aws/credentials,required=false set -eux &&
+# if [ "1" = "1" ]; then
+#     echo "Installing sccache..."
+#     && case "linux/amd64" in
+#         linux/arm64) SCCACHE_ARCH="aarch64" ;;
+#         linux/amd64) SCCACHE_ARCH="x86_64" ;;
+#         *) echo "Unsupported TARGETPLATFORM for sccache: linux/amd64" >&2; exit 1 ;;
+#     esac &&
+#     export SCCACHE_DOWNLOAD_URL="${SCCACHE_DOWNLOAD_URL:-https://github.com/mozilla/sccache/releases/download/v0.8.1/sccache-v0.8.1-${SCCACHE_ARCH}-unknown-linux-musl.tar.gz}" &&
+#     curl -L -o sccache.tar.gz ${SCCACHE_DOWNLOAD_URL} &&
+#     tar -xzf sccache.tar.gz &&
+#     sudo mv sccache-v0.8.1-${SCCACHE_ARCH}-unknown-linux-musl/sccache /usr/bin/sccache &&
+#     rm -rf sccache.tar.gz sccache-v0.8.1-${SCCACHE_ARCH}-unknown-linux-musl &&
+#     if [ ! -z ${SCCACHE_ENDPOINT} ] ; then
+#         export SCCACHE_ENDPOINT=${SCCACHE_ENDPOINT} ;
+#     fi &&
+#     export SCCACHE_BUCKET=vllm-build-sccache &&
+#     export SCCACHE_REGION=us-west-2 &&
+#     export SCCACHE_S3_NO_CREDENTIALS=0 &&
+#     export SCCACHE_IDLE_TIMEOUT=0 &&
+#     export CMAKE_BUILD_TYPE=Release &&
+#     export VLLM_USE_PRECOMPILED="" &&
+#     export VLLM_PRECOMPILED_WHEEL_COMMIT="" &&
+#     export VLLM_MAIN_CUDA_VERSION="" &&
+#     export VLLM_DOCKER_BUILD_CONTEXT=1 &&
+#     sccache --show-stats &&
+#     python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38 &&
+#     sccache --show-stats;
+# fi
+
+
 ARG vllm_target_device="cuda"
 ENV VLLM_TARGET_DEVICE=${vllm_target_device}
 ENV CCACHE_DIR=/root/.cache/ccache

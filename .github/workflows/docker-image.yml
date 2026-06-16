@@ -58,3 +58,4 @@ jobs:
           build-args: |
             PYTORCH_NIGHTLY=0
             USE_SCCACHE=1
+            SCCACHE_ENDPOINT=/sccache
