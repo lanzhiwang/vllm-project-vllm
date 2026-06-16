@@ -271,6 +271,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 #     uv pip install --python /opt/venv/bin/python3 -r requirements/cuda.txt --extra-index-url https://download.pytorch.org/whl/cu$(echo 13.0.2 | cut -d. -f1,2 | tr -d '.');
 # fi
 
+# [ 0 = 1 ]
+# echo 13.0.2 | cut -d. -f1,2 | tr -d .
+# uv pip install --python /opt/venv/bin/python3 -r requirements/cuda.txt --extra-index-url https://download.pytorch.org/whl/cu130
+
 # Track PyTorch lib versions used during build and match in downstream instances.
 # We do this for both nightly and release so we can strip dependencies/*.txt as needed.
 # Otherwise library dependencies can upgrade/downgrade torch incorrectly.
@@ -282,10 +286,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip freeze | grep -i "^torch=\|^torchvision=\|^torchaudio=" > torch_lib_versions.txt \
     && TORCH_LIB_VERSIONS=$(cat torch_lib_versions.txt | xargs) \
     && echo "Installed torch libs: ${TORCH_LIB_VERSIONS}"
-# [base 10/10] RUN --mount=type=cache,target=/root/.cache/uv
+# [base 10/10] RUN --mount=type=cache,target=/root/.cache/uv set -eux &&
 # uv pip freeze | grep -i "^torch=\|^torchvision=\|^torchaudio=" > torch_lib_versions.txt &&
 # TORCH_LIB_VERSIONS=$(cat torch_lib_versions.txt | xargs) &&
 # echo "Installed torch libs: ${TORCH_LIB_VERSIONS}"
+# TORCH_LIB_VERSIONS=torch==2.11.0+cu130 torchaudio==2.11.0+cu130 torchvision==0.26.0+cu130
 
 # CUDA arch list used by torch
 # Explicitly set the list to avoid issues with torch 2.2
@@ -339,7 +344,18 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         && uv pip install --python /opt/venv/bin/python3 -r requirements/build/cuda.txt \
         --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.'); \
     fi
-
+# [csrc-build  4/13] RUN --mount=type=cache,target=/root/.cache/uv set -eux &&
+# if [ "0" = "1" ]; then
+#     echo "Installing build requirements without torch..." &&
+#     python3 use_existing_torch.py --prefix &&
+#     uv pip install --python /opt/venv/bin/python3 -r requirements/build/cuda.txt &&
+#     echo "Installing torch nightly..." &&
+#     uv pip install --python /opt/venv/bin/python3 $(cat torch_lib_versions.txt | grep -i "^torch=" | xargs) --pre --index-url https://download.pytorch.org/whl/nightly/cu$(echo 13.0.2 | cut -d. -f1,2 | tr -d '.');
+# else
+#     echo "Installing build requirements..." &&
+#     uv pip install --python /opt/venv/bin/python3 -r requirements/build/cuda.txt --extra-index-url https://download.pytorch.org/whl/cu$(echo 13.0.2 | cut -d. -f1,2 | tr -d '.');
+# fi
+# uv pip install --python /opt/venv/bin/python3 -r requirements/build/cuda.txt --extra-index-url https://download.pytorch.org/whl/cu130
 
 WORKDIR /workspace
 # [csrc-build  5/13] WORKDIR /workspace
@@ -388,7 +404,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     if [ "${PYTORCH_NIGHTLY}" = "1" ]; then \
         python3 use_existing_torch.py --prefix; \
     fi
-
+# [csrc-build 11/13] RUN --mount=type=cache,target=/root/.cache/uv set -eux &&
+# if [ "0" = "1" ]; then
+#     python3 use_existing_torch.py --prefix;
+# fi
 
 # Build the vLLM wheel
 # if USE_SCCACHE is set, use sccache to speed up compilation

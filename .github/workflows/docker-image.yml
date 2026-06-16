@@ -57,3 +57,4 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             PYTORCH_NIGHTLY=0
+            USE_SCCACHE=1
