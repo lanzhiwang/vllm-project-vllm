@@ -517,6 +517,7 @@ async def health_check():
     如果后端三个物理集群中有一个处于异常不可用状态, 则立刻对外界返回 503 (Service Unavailable),
     以触发诸如 Kubernetes 等容器管理平台的自动故障迁移(Failover).
     """
+
     async def healthy(urls):
         if not urls:
             return "empty"

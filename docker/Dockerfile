@@ -137,6 +137,7 @@ ARG INSTALL_KV_CONNECTORS=false
 #################### BASE BUILD IMAGE ####################
 # prepare basic build environment
 FROM ${BUILD_BASE_IMAGE} AS base
+# [base  1/10] FROM docker.io/nvidia/cuda:13.0.2-devel-ubuntu22.04@sha256:1c517d4fb96528c8999e14e6e6b16d7e2ff9ae8d194fd788d60fdc88e693e982
 
 ARG CUDA_VERSION
 ARG PYTHON_VERSION
@@ -144,7 +145,7 @@ ARG PYTHON_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies including build tools
-RUN apt-get update -y \
+RUN set -eux && apt-get update -y \
     && apt-get install -y --no-install-recommends \
         # 开启编译器缓存, 加速重复构建
         ccache \
@@ -175,6 +176,21 @@ RUN apt-get update -y \
     && ln -s /opt/venv/bin/python3-config /usr/bin/python3-config \
     && ln -s /opt/venv/bin/pip /usr/bin/pip \
     && python3 --version && python3 -m pip --version
+# [base  2/10]
+# RUN
+# apt-get update -y &&
+# apt-get install -y --no-install-recommends ccache software-properties-common git curl sudo python3-pip libibverbs-dev gcc-10 g++-10 &&
+# update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 110 --slave /usr/bin/g++ g++ /usr/bin/g++-10 &&
+# (apt-get install -y --no-install-recommends python3.12-dev 2>/dev/null || true) &&
+# rm -rf /var/lib/apt/lists/* &&
+# curl -LsSf https://astral.sh/uv/install.sh | sh &&
+# $HOME/.local/bin/uv venv /opt/venv --python 3.12 &&
+# rm -f /usr/bin/python3 /usr/bin/python3-config /usr/bin/pip &&
+# ln -s /opt/venv/bin/python3 /usr/bin/python3 &&
+# ln -s /opt/venv/bin/python3-config /usr/bin/python3-config &&
+# ln -s /opt/venv/bin/pip /usr/bin/pip &&
+# python3 --version &&
+# python3 -m pip --version
 
 # Activate virtual environment and add uv to PATH
 ENV PATH="/opt/venv/bin:/root/.local/bin:$PATH"
@@ -187,6 +203,7 @@ ENV UV_LINK_MODE=copy
 
 # Verify GCC version
 RUN gcc --version
+# [base  3/10] RUN gcc --version
 
 # Enable CUDA forward compatibility by setting '-e VLLM_ENABLE_CUDA_COMPATIBILITY=1'
 # Only needed for datacenter/professional GPUs with older drivers.
@@ -208,6 +225,7 @@ ENV VLLM_ENABLE_CUDA_COMPATIBILITY=0
 ARG PYTORCH_CUDA_INDEX_BASE_URL
 
 WORKDIR /workspace
+# [base  4/10] WORKDIR /workspace
 
 # We can specify the standard or nightly build of PyTorch
 ARG PYTORCH_NIGHTLY
@@ -215,11 +233,20 @@ ARG PYTORCH_NIGHTLY
 # Install build and runtime dependencies, including PyTorch
 # Check whether to install torch nightly instead of release for this build
 COPY requirements/common.txt requirements/common.txt
+# [base  5/10] COPY requirements/common.txt requirements/common.txt
+
 COPY requirements/cuda.txt requirements/cuda.txt
+# [base  6/10] COPY requirements/cuda.txt requirements/cuda.txt
+
 COPY use_existing_torch.py use_existing_torch.py
+# [base  7/10] COPY use_existing_torch.py use_existing_torch.py
+
 COPY pyproject.toml pyproject.toml
+# [base  8/10] COPY pyproject.toml pyproject.toml
+
 # 挂载缓存目录, 加速 uv 下载
 RUN --mount=type=cache,target=/root/.cache/uv \
+    set -eux && \
     # 支持安装开发版 Torch, 方便研究员测试新技术
     if [ "${PYTORCH_NIGHTLY}" = "1" ]; then \
         echo "Installing torch nightly..." \
@@ -233,6 +260,16 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         uv pip install --python /opt/venv/bin/python3 -r requirements/cuda.txt \
         --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.'); \
     fi
+# [base  9/10] RUN --mount=type=cache,target=/root/.cache/uv
+# if [ "${PYTORCH_NIGHTLY}" = "1" ]; then
+#     echo "Installing torch nightly..." &&
+#     uv pip install --python /opt/venv/bin/python3 torch torchaudio torchvision --pre --index-url https://download.pytorch.org/whl/nightly/cu$(echo 13.0.2 | cut -d. -f1,2 | tr -d '.') &&
+#     echo "Installing other requirements..." &&
+#     /opt/venv/bin/python3 use_existing_torch.py --prefix &&
+#     uv pip install --python /opt/venv/bin/python3 -r requirements/cuda.txt --extra-index-url https://download.pytorch.org/whl/nightly/cu$(echo 13.0.2 | cut -d. -f1,2 | tr -d '.');
+# else
+#     uv pip install --python /opt/venv/bin/python3 -r requirements/cuda.txt --extra-index-url https://download.pytorch.org/whl/cu$(echo 13.0.2 | cut -d. -f1,2 | tr -d '.');
+# fi
 
 # Track PyTorch lib versions used during build and match in downstream instances.
 # We do this for both nightly and release so we can strip dependencies/*.txt as needed.
@@ -241,9 +278,14 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # 我们对每夜构建(Nightly)和正式发布(Release)版本均执行此操作, 以便在需要时移除 `dependencies/*.txt` 文件.
 # 否则, 库依赖项可能会导致 Torch 版本发生错误的升级或降级.
 RUN --mount=type=cache,target=/root/.cache/uv \
+    set -eux && \
     uv pip freeze | grep -i "^torch=\|^torchvision=\|^torchaudio=" > torch_lib_versions.txt \
     && TORCH_LIB_VERSIONS=$(cat torch_lib_versions.txt | xargs) \
     && echo "Installed torch libs: ${TORCH_LIB_VERSIONS}"
+# [base 10/10] RUN --mount=type=cache,target=/root/.cache/uv
+# uv pip freeze | grep -i "^torch=\|^torchvision=\|^torchaudio=" > torch_lib_versions.txt &&
+# TORCH_LIB_VERSIONS=$(cat torch_lib_versions.txt | xargs) &&
+# echo "Installed torch libs: ${TORCH_LIB_VERSIONS}"
 
 # CUDA arch list used by torch
 # Explicitly set the list to avoid issues with torch 2.2
@@ -266,8 +308,13 @@ ARG PYTORCH_NIGHTLY
 
 # Install build dependencies
 COPY requirements/build/cuda.txt requirements/build/cuda.txt
+# [csrc-build  1/13] COPY requirements/build/cuda.txt requirements/build/cuda.txt
+
 COPY use_existing_torch.py use_existing_torch.py
+# [csrc-build  2/13] COPY use_existing_torch.py use_existing_torch.py
+
 COPY --from=base /workspace/torch_lib_versions.txt torch_lib_versions.txt
+# [csrc-build  3/13] COPY --from=base /workspace/torch_lib_versions.txt torch_lib_versions.txt
 
 # This timeout (in seconds) is necessary when installing some dependencies via uv since it's likely to time out
 # Reference: https://github.com/astral-sh/uv/pull/1694
@@ -279,6 +326,7 @@ ENV UV_INDEX_STRATEGY="unsafe-best-match"
 ENV UV_LINK_MODE=copy
 
 RUN --mount=type=cache,target=/root/.cache/uv \
+    set -eux && \
     if [ "${PYTORCH_NIGHTLY}" = "1" ]; then \
         echo "Installing build requirements without torch..." \
         && python3 use_existing_torch.py --prefix \
@@ -292,13 +340,24 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.'); \
     fi
 
+
 WORKDIR /workspace
+# [csrc-build  5/13] WORKDIR /workspace
 
 COPY pyproject.toml setup.py CMakeLists.txt ./
+# [csrc-build  6/13] COPY pyproject.toml setup.py CMakeLists.txt ./
+
 COPY cmake cmake/
+# [csrc-build  7/13] COPY cmake cmake/
+
 COPY csrc csrc/
+# [csrc-build  8/13] COPY csrc csrc/
+
 COPY vllm/envs.py vllm/envs.py
+# [csrc-build  9/13] COPY vllm/envs.py vllm/envs.py
+
 COPY vllm/__init__.py vllm/__init__.py
+# [csrc-build 10/13] COPY vllm/__init__.py vllm/__init__.py
 
 # max jobs used by Ninja to build extensions
 # 限制并行任务数 (max_jobs), 防止在多核机器上编译时内存溢出 (OOM)
@@ -325,9 +384,11 @@ ENV SETUPTOOLS_SCM_PRETEND_VERSION="0.0.0+csrc.build"
 
 # Use existing torch for nightly builds
 RUN --mount=type=cache,target=/root/.cache/uv \
+    set -eux && \
     if [ "${PYTORCH_NIGHTLY}" = "1" ]; then \
         python3 use_existing_torch.py --prefix; \
     fi
+
 
 # Build the vLLM wheel
 # if USE_SCCACHE is set, use sccache to speed up compilation
@@ -337,6 +398,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # 下次构建时如果代码没变, 直接下载二进制文件, 编译时间从 20 分钟降到 1 分钟.
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=secret,id=aws-credentials,target=/root/.aws/credentials,required=false \
+    set -eux && \
     if [ "$USE_SCCACHE" = "1" ]; then \
         echo "Installing sccache..." \
         && case "${TARGETPLATFORM}" in \
@@ -369,6 +431,7 @@ ENV VLLM_TARGET_DEVICE=${vllm_target_device}
 ENV CCACHE_DIR=/root/.cache/ccache
 RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/root/.cache/uv \
+    set -eux && \
     if [ "$USE_SCCACHE" != "1" ]; then \
         # Clean any existing CMake artifacts
         rm -rf .deps && \
@@ -395,13 +458,17 @@ ENV UV_INDEX_STRATEGY="unsafe-best-match"
 ENV UV_LINK_MODE=copy
 
 WORKDIR /workspace
+# [extensions-build 1/3] WORKDIR /workspace
 
 # Build DeepEP wheels
 COPY tools/ep_kernels/install_python_libraries.sh /tmp/install_python_libraries.sh
+# [extensions-build 2/3] COPY tools/ep_kernels/install_python_libraries.sh /tmp/install_python_libraries.sh
+
 # Defaults moved here from tools/ep_kernels/install_python_libraries.sh for centralized version management
 ARG DEEPEP_COMMIT_HASH=73b6ea4
 ARG NVSHMEM_VER
 RUN --mount=type=cache,target=/root/.cache/uv \
+    set -eux && \
     mkdir -p /tmp/ep_kernels_workspace/dist && \
     export TORCH_CUDA_ARCH_LIST='9.0a 10.0a' && \
     /tmp/install_python_libraries.sh \

@@ -137,13 +137,15 @@ if __name__ == "__main__":
     main()
 
 """
-vllm serve unsloth/Llama-3.2-1B-Instruct --structured-outputs-config.backend outlines
+vllm serve mistralai/Mistral-7B-Instruct-v0.3 \
+            --chat-template examples/tool_chat_template_mistral.jinja \
+            --enable-auto-tool-choice --tool-call-parser mistral
 
 docker run -ti --rm \
 --entrypoint /usr/bin/env \
 --security-opt seccomp=unconfined \
 --gpus '"device=2, 6"' \
--v /root/huzhi/model:/model \
+-v /data/model:/model \
 -p 0.0.0.0:8090:8000 \
 --name vllm-server \
 vllm/vllm-openai:v0.20.0-cu129-ubuntu2404 bash
@@ -171,8 +173,8 @@ unset TRITON_PRINT_AUTOTUNING
 unset TORCH_DISTRIBUTED_DEBUG
 
 vllm serve \
-/model/Llama-3.2-1B-Instruct \
---served-model-name Llama-3.2-1B-Instruct \
+/model/Mistral-7B-Instruct-v0.3 \
+--served-model-name Mistral-7B-Instruct-v0.3 \
 --trust-remote-code \
 --use-tqdm-on-load \
 --host 0.0.0.0 \
@@ -194,6 +196,8 @@ vllm serve \
 --enable-server-load-tracking \
 --enable-force-include-usage \
 --shutdown-timeout 30 \
---structured-outputs-config.backend outlines
+--chat-template /model/tool_chat_template_mistral.jinja \
+--enable-auto-tool-choice \
+--tool-call-parser mistral
 
 """

@@ -1,12 +1,23 @@
 #!/bin/bash
 #
+# vLLM 特性背景说明:
+# vLLM 支持分布式推理(Tensor Parallelism 强依赖单机多卡/多机多卡, Pipeline Parallelism 依赖多机).
+# 在多机环境下, vLLM 默认使用 Ray 作为分布式执行引擎.
+# 一个完整的分布式 vLLM 集群需要:
+# 1. 一个 Ray Head 节点(协调器, 通常也是 vLLM 服务的主入口).
+# 2. 多个 Ray Worker 节点(提供额外的 GPU 算力).
+#
 # Launch a Ray cluster inside Docker for vLLM inference.
+# 在 Docker 中启动 Ray 集群以进行 vLLM 推理.
 #
 # This script can start either a head node or a worker node, depending on the
 # --head or --worker flag provided as the third positional argument.
+# 该脚本既可以启动头节点, 也可以启动工作节点, 具体取决于作为第三个位置参数提供的 `--head` 或 `--worker` 标志.
 #
 # Usage:
 # 1. Designate one machine as the head node and execute:
+# 指定一台机器作为头节点, 并执行:
+#
 #    bash run_cluster.sh \
 #         vllm/vllm-openai \
 #         <head_node_ip> \
@@ -15,6 +26,8 @@
 #         -e VLLM_HOST_IP=<head_node_ip>
 #
 # 2. On every worker machine, execute:
+# 在每台工作节点机器上执行:
+#
 #    bash run_cluster.sh \
 #         vllm/vllm-openai \
 #         <head_node_ip> \
@@ -26,13 +39,18 @@
 # Keep each terminal session open. Closing a session stops the associated Ray
 # node and thereby shuts down the entire cluster.
 # Every machine must be reachable at the supplied IP address.
+# 每个 Worker 都需要一个唯一的 VLLM_HOST_IP 值.
+# 请保持每个终端会话处于打开状态. 关闭会话会停止相应的 Ray 节点, 从而导致整个集群关闭.
+# 必须能够通过提供的 IP 地址访问每一台机器.
 #
 # The container is named "node-<random_suffix>". To open a shell inside
 # a container after launch, use:
+# 该容器命名为"node-<random_suffix>". 若要在容器启动后进入其 Shell, 请使用:
 #       docker exec -it node-<random_suffix> /bin/bash
 #
 # Then, you can execute vLLM commands on the Ray cluster as if it were a
 # single machine, e.g. vllm serve ...
+# 随后, 您就可以像在单机上一样在 Ray 集群上执行 vLLM 命令了, 例如 `vllm serve ...`.
 #
 # To stop the container, use:
 #       docker stop node-<random_suffix>

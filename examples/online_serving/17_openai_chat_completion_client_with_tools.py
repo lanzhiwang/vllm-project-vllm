@@ -93,11 +93,13 @@ def handle_tool_calls_stream(
     print("chunks: ")
     for chunk in tool_calls_stream:
         print(f"handle_tool_calls_stream chunk: {chunk}")
+
         chunks.append(chunk)
-        if chunk.choices[0].delta.tool_calls:
-            print(chunk.choices[0].delta.tool_calls[0])
-        else:
-            print(chunk.choices[0].delta)
+        # if chunk.choices[0].delta.tool_calls:
+        #     print(chunk.choices[0].delta.tool_calls[0])
+        # else:
+        #     print(chunk.choices[0].delta)
+
     return chunks
 
 
@@ -106,7 +108,7 @@ def handle_tool_calls_arguments(chunks: list[Any]) -> list[str]:
     tool_call_idx = -1
     print("arguments: ")
     for chunk in chunks:
-        if chunk.choices[0].delta.tool_calls:
+        if chunk.choices and chunk.choices[0].delta.tool_calls:
             tool_call = chunk.choices[0].delta.tool_calls[0]
             if tool_call.index != tool_call_idx:
                 if tool_call_idx >= 0:
@@ -137,21 +139,23 @@ def main():
     # Get available models and select one
     models = client.models.list()
     model = models.data[0].id
-    print(f"main model: {model}")
+    print(f"main model: {model}\n")
 
     print(f"main messages: {messages}")
     print(f"main tools: {tools}\n")
+
     chat_completion = client.chat.completions.create(
         messages=messages, model=model, tools=tools
     )
-
     print("-" * 70)
     print("Chat completion results:")
     print(chat_completion)
+
     print("-" * 70)
 
     # Stream tool calls
     chunks = handle_tool_calls_stream(client, messages, model, tools)
+    print(f"main chunks: {chunks}\n")
     print("-" * 70)
 
     # Handle arguments from streamed tool calls
@@ -178,10 +182,12 @@ def main():
     completion_tool_calls = chat_completion.choices[0].message.tool_calls
     for call in completion_tool_calls:
         print(f"main call: {call}")
+
         tool_to_call = available_tools[call.function.name]
         args = json.loads(call.function.arguments)
         result = tool_to_call(**args)
         print("tool_to_call result: ", result)
+
         messages.append(
             {
                 "role": "tool",
@@ -213,7 +219,7 @@ docker run -ti --rm \
 --entrypoint /usr/bin/env \
 --security-opt seccomp=unconfined \
 --gpus '"device=2, 6"' \
--v /root/huzhi/model:/model \
+-v /data/model:/model \
 -p 0.0.0.0:8090:8000 \
 --name vllm-server \
 vllm/vllm-openai:v0.20.0-cu129-ubuntu2404 bash

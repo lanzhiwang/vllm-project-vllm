@@ -384,6 +384,8 @@ def run_audio(model: str, max_completion_tokens: int) -> None:
 
     audio_url = AudioAsset("winning_call").url
     print(f"run_audio audio_url: {audio_url}")
+    # audio_url: https://vllm-public-assets.s3.us-west-2.amazonaws.com/multimodal_asset/winning_call.ogg
+
     audio_base64 = encode_base64_content_from_url(audio_url)
 
     # OpenAI-compatible schema (`input_audio`)
