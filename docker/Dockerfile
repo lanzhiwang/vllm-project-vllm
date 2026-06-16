@@ -176,8 +176,8 @@ RUN set -eux && apt-get update -y \
     && ln -s /opt/venv/bin/python3-config /usr/bin/python3-config \
     && ln -s /opt/venv/bin/pip /usr/bin/pip \
     && python3 --version && python3 -m pip --version
-# [base  2/10]
-# RUN
+# [base  2/10] RUN
+# set -eux &&
 # apt-get update -y &&
 # apt-get install -y --no-install-recommends ccache software-properties-common git curl sudo python3-pip libibverbs-dev gcc-10 g++-10 &&
 # update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 110 --slave /usr/bin/g++ g++ /usr/bin/g++-10 &&
@@ -260,7 +260,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         uv pip install --python /opt/venv/bin/python3 -r requirements/cuda.txt \
         --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.'); \
     fi
-# [base  9/10] RUN --mount=type=cache,target=/root/.cache/uv
+# [base  9/10] RUN --mount=type=cache,target=/root/.cache/uv set -eux &&
 # if [ "${PYTORCH_NIGHTLY}" = "1" ]; then
 #     echo "Installing torch nightly..." &&
 #     uv pip install --python /opt/venv/bin/python3 torch torchaudio torchvision --pre --index-url https://download.pytorch.org/whl/nightly/cu$(echo 13.0.2 | cut -d. -f1,2 | tr -d '.') &&
