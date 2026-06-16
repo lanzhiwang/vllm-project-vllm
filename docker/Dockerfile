@@ -458,8 +458,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 #     tar -xzf sccache.tar.gz &&
 #     sudo mv sccache-v0.8.1-${SCCACHE_ARCH}-unknown-linux-musl/sccache /usr/bin/sccache &&
 #     rm -rf sccache.tar.gz sccache-v0.8.1-${SCCACHE_ARCH}-unknown-linux-musl &&
-#     if [ ! -z ${SCCACHE_ENDPOINT} ] ; then
-#         export SCCACHE_ENDPOINT=${SCCACHE_ENDPOINT} ;
+#     if [ ! -z /sccache ] ; then
+#         export SCCACHE_ENDPOINT=/sccache ;
 #     fi &&
 #     export SCCACHE_BUCKET=vllm-build-sccache &&
 #     export SCCACHE_REGION=us-west-2 &&
@@ -474,7 +474,26 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 #     python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38 &&
 #     sccache --show-stats;
 # fi
-
+# SCCACHE_ARCH=x86_64
+# export SCCACHE_DOWNLOAD_URL=https://github.com/mozilla/sccache/releases/download/v0.8.1/sccache-v0.8.1-x86_64-unknown-linux-musl.tar.gz
+# curl -L -o sccache.tar.gz https://github.com/mozilla/sccache/releases/download/v0.8.1/sccache-v0.8.1-x86_64-unknown-linux-musl.tar.gz
+# tar -xzf sccache.tar.gz
+# sudo mv sccache-v0.8.1-x86_64-unknown-linux-musl/sccache /usr/bin/sccache
+# rm -rf sccache.tar.gz sccache-v0.8.1-x86_64-unknown-linux-musl
+# [ ! -z /sccache ]
+# export SCCACHE_ENDPOINT=/sccache
+# export SCCACHE_BUCKET=vllm-build-sccache
+# export SCCACHE_REGION=us-west-2
+# export SCCACHE_S3_NO_CREDENTIALS=0
+# export SCCACHE_IDLE_TIMEOUT=0
+# export CMAKE_BUILD_TYPE=Release
+# export VLLM_USE_PRECOMPILED=
+# export VLLM_PRECOMPILED_WHEEL_COMMIT=
+# export VLLM_MAIN_CUDA_VERSION=
+# export VLLM_DOCKER_BUILD_CONTEXT=1
+# sccache --show-stats
+# python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38
+# sccache --show-stats
 
 ARG vllm_target_device="cuda"
 ENV VLLM_TARGET_DEVICE=${vllm_target_device}
