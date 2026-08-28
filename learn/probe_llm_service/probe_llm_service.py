@@ -304,7 +304,7 @@ def test_non_streaming_performance(prompt="你好, 请介绍一下自己", runs=
                             'index': 0,
                             'message': {
                                 'role': 'assistant',
-                                'content': '你好呀! 很高兴认识你! 😊\n\n我是**DeepSeek**, 由深度求索公司创造的AI助手. ',
+                                'content': '你好呀! 很高兴认识你! 😊\n\n我是DeepSeek, 由深度求索公司创造的AI助手. ',
                                 'reasoning_content': '好的, 用户让我介绍一下自己. 这是一个很常见的开场问题, 用户可能是第一次接触我, 想了解我的基本情况和能力范围'
                             }
                         }

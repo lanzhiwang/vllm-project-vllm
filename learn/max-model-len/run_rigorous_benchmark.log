@@ -1,0 +1,64 @@
+===============================================================================================
+🎯 vLLM 前缀缓存 (Prefix Caching) 与 Prompt 长度关系严密验证实验
+===============================================================================================
+
+-----------------------------------------------------------------------------------------------
+🔬 正在测试实验组: [微型前缀 (Tiny, ~40 Tokens)] (Session: d2944f88)
+-----------------------------------------------------------------------------------------------
+final_usage: CompletionUsage(completion_tokens=2, prompt_tokens=49, total_tokens=51, completion_tokens_details=None, prompt_tokens_details=None)
+❄️  [冷启动 Miss] -> 总 Prompt Tokens: 49    | Cached: 0     | TTFT: 1606.63 ms
+final_usage: CompletionUsage(completion_tokens=2, prompt_tokens=51, total_tokens=53, completion_tokens_details=None, prompt_tokens_details=PromptTokensDetails(audio_tokens=None, cache_write_tokens=None, cached_tokens=32, image_tokens=None, text_tokens=None))
+final_usage: CompletionUsage(completion_tokens=2, prompt_tokens=51, total_tokens=53, completion_tokens_details=None, prompt_tokens_details=PromptTokensDetails(audio_tokens=None, cache_write_tokens=None, cached_tokens=32, image_tokens=None, text_tokens=None))
+final_usage: CompletionUsage(completion_tokens=2, prompt_tokens=51, total_tokens=53, completion_tokens_details=None, prompt_tokens_details=PromptTokensDetails(audio_tokens=None, cache_write_tokens=None, cached_tokens=32, image_tokens=None, text_tokens=None))
+🔥 [缓存命中 Hit ] -> 复用 Tokens: 32        | 三次平均 TTFT:  759.40 ms (单次: ['1093.0ms', '1092.9ms', '92.3ms'])
+🚀 [首字延迟加速比] -> 2.12 x
+
+-----------------------------------------------------------------------------------------------
+🔬 正在测试实验组: [短前缀 (Short, ~300 Tokens)] (Session: 9a20a68e)
+-----------------------------------------------------------------------------------------------
+final_usage: CompletionUsage(completion_tokens=2, prompt_tokens=434, total_tokens=436, completion_tokens_details=None, prompt_tokens_details=None)
+❄️  [冷启动 Miss] -> 总 Prompt Tokens: 434   | Cached: 0     | TTFT:  140.98 ms
+final_usage: CompletionUsage(completion_tokens=2, prompt_tokens=436, total_tokens=438, completion_tokens_details=None, prompt_tokens_details=PromptTokensDetails(audio_tokens=None, cache_write_tokens=None, cached_tokens=416, image_tokens=None, text_tokens=None))
+final_usage: CompletionUsage(completion_tokens=2, prompt_tokens=436, total_tokens=438, completion_tokens_details=None, prompt_tokens_details=PromptTokensDetails(audio_tokens=None, cache_write_tokens=None, cached_tokens=416, image_tokens=None, text_tokens=None))
+final_usage: CompletionUsage(completion_tokens=2, prompt_tokens=436, total_tokens=438, completion_tokens_details=None, prompt_tokens_details=PromptTokensDetails(audio_tokens=None, cache_write_tokens=None, cached_tokens=416, image_tokens=None, text_tokens=None))
+🔥 [缓存命中 Hit ] -> 复用 Tokens: 416       | 三次平均 TTFT:   99.07 ms (单次: ['95.1ms', '110.0ms', '92.0ms'])
+🚀 [首字延迟加速比] -> 1.42 x
+
+-----------------------------------------------------------------------------------------------
+🔬 正在测试实验组: [中长前缀 (Medium, ~1500 Tokens)] (Session: 4184a853)
+-----------------------------------------------------------------------------------------------
+final_usage: CompletionUsage(completion_tokens=2, prompt_tokens=1835, total_tokens=1837, completion_tokens_details=None, prompt_tokens_details=None)
+❄️  [冷启动 Miss] -> 总 Prompt Tokens: 1835  | Cached: 0     | TTFT:  364.76 ms
+final_usage: CompletionUsage(completion_tokens=2, prompt_tokens=1837, total_tokens=1839, completion_tokens_details=None, prompt_tokens_details=PromptTokensDetails(audio_tokens=None, cache_write_tokens=None, cached_tokens=1808, image_tokens=None, text_tokens=None))
+final_usage: CompletionUsage(completion_tokens=2, prompt_tokens=1837, total_tokens=1839, completion_tokens_details=None, prompt_tokens_details=PromptTokensDetails(audio_tokens=None, cache_write_tokens=None, cached_tokens=1808, image_tokens=None, text_tokens=None))
+final_usage: CompletionUsage(completion_tokens=2, prompt_tokens=1837, total_tokens=1839, completion_tokens_details=None, prompt_tokens_details=PromptTokensDetails(audio_tokens=None, cache_write_tokens=None, cached_tokens=1808, image_tokens=None, text_tokens=None))
+🔥 [缓存命中 Hit ] -> 复用 Tokens: 1808      | 三次平均 TTFT:  132.87 ms (单次: ['113.5ms', '108.9ms', '176.2ms'])
+🚀 [首字延迟加速比] -> 2.75 x
+
+-----------------------------------------------------------------------------------------------
+🔬 正在测试实验组: [超长前缀 (Long, ~5000 Tokens)] (Session: 635075b8)
+-----------------------------------------------------------------------------------------------
+final_usage: CompletionUsage(completion_tokens=2, prompt_tokens=12637, total_tokens=12639, completion_tokens_details=None, prompt_tokens_details=None)
+❄️  [冷启动 Miss] -> 总 Prompt Tokens: 12637 | Cached: 0     | TTFT: 2238.18 ms
+final_usage: CompletionUsage(completion_tokens=2, prompt_tokens=12639, total_tokens=12641, completion_tokens_details=None, prompt_tokens_details=PromptTokensDetails(audio_tokens=None, cache_write_tokens=None, cached_tokens=12608, image_tokens=None, text_tokens=None))
+final_usage: CompletionUsage(completion_tokens=2, prompt_tokens=12639, total_tokens=12641, completion_tokens_details=None, prompt_tokens_details=PromptTokensDetails(audio_tokens=None, cache_write_tokens=None, cached_tokens=12608, image_tokens=None, text_tokens=None))
+final_usage: CompletionUsage(completion_tokens=2, prompt_tokens=12639, total_tokens=12641, completion_tokens_details=None, prompt_tokens_details=PromptTokensDetails(audio_tokens=None, cache_write_tokens=None, cached_tokens=12608, image_tokens=None, text_tokens=None))
+🔥 [缓存命中 Hit ] -> 复用 Tokens: 12608     | 三次平均 TTFT:  268.99 ms (单次: ['149.5ms', '493.8ms', '163.6ms'])
+🚀 [首字延迟加速比] -> 8.32 x
+
+===============================================================================================
+📊 最终测试结果汇总与数学规律检验表 (Block Size = 16)
+===============================================================================================
+前缀规模                       | Prompt  | 命中 Tokens   | 未命中(尾数)      | 冷启动 TTFT    | 缓存 TTFT    | 加速比     
+-----------------------------------------------------------------------------------------------
+微型前缀 (Tiny, ~40 Tokens)  | 49      | 32    (✓) | 17           |  1606.63 ms |  759.40 ms |   2.12x
+短前缀 (Short, ~300 Tokens) | 434     | 416   (✓) | 18           |   140.98 ms |   99.07 ms |   1.42x
+中长前缀 (Medium, ~1500 Tokens) | 1835    | 1808  (✓) | 27           |   364.76 ms |  132.87 ms |   2.75x
+超长前缀 (Long, ~5000 Tokens) | 12637   | 12608 (✓) | 29           |  2238.18 ms |  268.99 ms |   8.32x
+-----------------------------------------------------------------------------------------------
+
+💡 [核心结论与数学事实]:
+1. Block 对齐恒等式: `Cached Tokens` 严格等于 `floor(可复用前缀Tokens / 16) * 16`. 
+2. 长度与收益曲线: 
+   - 微型/短文本: 虽然 `Cached Tokens` 占比很高, 但因 Prefill 本身只需 1~2ms, 总耗时由网络与调度主导, 故加速比接近 1.0x~1.3x. 
+   - 超长文本: Prefill 计算耗时随长度呈超线性增长. 命中缓存直接省去了数千个 Token 的计算, TTFT 加速比呈现质的飞跃(5x ~ 20x+). 

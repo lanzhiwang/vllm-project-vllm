@@ -240,7 +240,7 @@ def robust_stream_reader_demo():
                         # ✅ 安全获取 choices 列表 (防止 choices 为空列表时报 list index out of range)
                         choices = chunk.get("choices") or []
                         if not choices:
-                            # 可能是末尾附带的 usage/metrics 数据块，安全跳过或提取
+                            # 可能是末尾附带的 usage/metrics 数据块, 安全跳过或提取
                             continue
 
                         delta = choices[0].get("delta", {})

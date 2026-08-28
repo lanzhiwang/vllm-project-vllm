@@ -241,10 +241,10 @@ def verify_prefix_caching():
         )
         print("   可能原因:")
         print(
-            "   1. 推理引擎后端未启用 Prefix Caching（例如 vLLM 缺少 `--enable-prefix-caching`）. "
+            "   1. 推理引擎后端未启用 Prefix Caching(例如 vLLM 缺少 `--enable-prefix-caching`). "
         )
         print(
-            "   2. 多 Worker 实例负载均衡时缺少会话保持（Sticky Routing）, 热请求落到了其他节点. "
+            "   2. 多 Worker 实例负载均衡时缺少会话保持(Sticky Routing), 热请求落到了其他节点. "
         )
 
 

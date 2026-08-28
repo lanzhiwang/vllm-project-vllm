@@ -2,6 +2,90 @@
 --------------------------------------------------------------------------------------------------
 
 ```bash
+
+select * from token_audit_logs WHERE uuid in ('35ff460c-2142-48cd-810b-5ab46958eaf2', '4a2ba43a-7d3d-419d-8bd1-d90e40cc713f');
+
+select * from token_audit_logs where original_auth = 'kn49enthcjzklckavdwhhleo' and authorization = 'd0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o';
+
+SELECT
+    `id`,
+    `uuid`,
+    `request_id`,
+    `llm_model_final`,
+    `status_code`,
+    `input_token`,
+    `output_token`,
+    `cached_token`,
+    `total_token`,
+    `cost_total`,
+    `created_at`
+FROM `token_audit_logs`
+WHERE `original_auth` = 'kn49enthcjzklckavdwhhleo'
+  AND `authorization` = 'd0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o'
+  AND `created_at` >= '2026-08-26 17:00:00.000'
+  AND `created_at` <  '2026-08-26 18:00:00.000'
+ORDER BY `created_at` DESC;
+
+
+
+SELECT
+    DATE_FORMAT(`created_at`, '%Y-%m-%d %H:00:00') AS `stat_hour`,
+    COUNT(1)               AS `request_count`,      -- 当前小时请求次数
+    SUM(`input_token`)     AS `total_input_token`,  -- 输入Token总数
+    SUM(`output_token`)    AS `total_output_token`, -- 输出Token总数
+    SUM(`cached_token`)    AS `total_cached_token`, -- 命中缓存Token总数
+    SUM(`total_token`)     AS `sum_total_tokens`    -- 整体Token总数
+FROM `token_audit_logs`
+WHERE `original_auth` = 'kn49enthcjzklckavdwhhleo'
+  AND `authorization` = 'd0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o'
+  AND `created_at` >= '2026-08-26 17:00:00.000'
+  AND `created_at` <  '2026-08-26 18:00:00.000'
+GROUP BY `stat_hour`
+ORDER BY `stat_hour` ASC;
+
+
+WITH RECURSIVE `hours_generator` AS (
+    -- 1. 生成当天 00:00:00 到 23:00:00 的 24 个时间点
+    SELECT
+        '2026-08-26 00:00:00' AS `stat_hour_str`,
+        0 AS `h`
+    UNION ALL
+    SELECT
+        DATE_FORMAT(DATE_ADD('2026-08-26 00:00:00', INTERVAL `h` + 1 HOUR), '%Y-%m-%d %H:00:00'),
+        `h` + 1
+    FROM `hours_generator`
+    WHERE `h` < 23
+),
+`daily_logs` AS (
+    -- 2. 统计当天有日志的小时数据
+    SELECT
+        DATE_FORMAT(`created_at`, '%Y-%m-%d %H:00:00') AS `stat_hour_str`,
+        COUNT(1)            AS `request_count`,
+        SUM(`input_token`)  AS `total_input_token`,
+        SUM(`output_token`) AS `total_output_token`,
+        SUM(`cached_token`) AS `total_cached_token`,
+        SUM(`total_token`)  AS `sum_total_tokens`
+    FROM `token_audit_logs`
+    WHERE `original_auth` = 'kn49enthcjzklckavdwhhleo'
+      AND `authorization` = 'd0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o'
+      AND `created_at` >= '2026-08-26 00:00:00.000'
+      AND `created_at` <  '2026-08-27 00:00:00.000'
+    GROUP BY `stat_hour_str`
+)
+-- 3. LEFT JOIN 补齐没有调用记录的小时, 用 0 填充
+SELECT
+    h.`stat_hour_str` AS `stat_hour`,
+    COALESCE(l.`request_count`, 0)      AS `request_count`,
+    COALESCE(l.`total_input_token`, 0)  AS `total_input_token`,
+    COALESCE(l.`total_output_token`, 0) AS `total_output_token`,
+    COALESCE(l.`total_cached_token`, 0) AS `total_cached_token`,
+    COALESCE(l.`sum_total_tokens`, 0)   AS `sum_total_tokens`
+FROM `hours_generator` h
+LEFT JOIN `daily_logs` l ON h.`stat_hour_str` = l.`stat_hour_str`
+ORDER BY h.`stat_hour_str` ASC;
+
+
+
 curl --request POST \
   --url https://api.gpugeek.com/v1/chat/completions \
   --header 'Authorization: Bearer d0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o' \
@@ -258,13 +342,395 @@ pip install requests
 
 --------------------------------------------------------------------------------------------------
 
---------------------------------------------------------------------------------------------------
+Q: 假设你是一位精通 LLM 模型推理服务的高级研究人员, 我现在有一个模型推理服务, 我可以使用客户端正常请求它, 如下所示:
+```bash
+$ curl -sv http://172.16.10.55:24182/v1/chat/completions \
+-X POST \
+-H 'Content-Type: application/json' \
+-H 'Authorization: Bearer kn49enthcjzklckavdwhhleo' \
+-d '{
+    "model": "DEEPSEEK",
+    "stream": false,
+    "messages": [
+        {
+            "role": "user",
+            "content": "什么是redis?"
+        }
+    ]
+}'
+$
+
+```
+请帮我写一个 python 脚本, 在脚本中对这个推理服务发送多次请求, 具体要求如下:
+1、每次的请求的 prompt 不同
+2、流式请求和非流式请求大致 8:2 的比例
+3、尽可能详细的打印返回的各种信息
+4、尽可能细致的区分并处理各种异常情况
+请输出完整的脚本, 添加尽可能详细的日志
+
+这份针对大模型推理服务(LLM Inference Serving)的自动化请求与压测/评测脚本, 严格遵循了生产级大模型基准测试(Benchmarking)的标准.
+
+脚本具备以下特性:
+
+1. 多维度 Prompt 库: 包含逻辑推理、代码生成、数学计算、常识问答等, 每次请求自动随机挑选.
+2. 8:2 流式/非流式动态路由: 按照 80% 流式(Streaming SSE)与 20% 非流式(Non-Streaming)动态调度.
+3. 高精度的性能与网关指标提取:
+   - TTFT(Time To First Token, 首字延迟)
+   - Total Latency / E2E 耗时
+   - TPS(Tokens Per Second, 生成吞吐速率)
+   - 网关 & Mesh 指标: 提取如 `x-envoy-upstream-service-time`、`x-cds-request-id`、`trace-id`、`req-cost-time` 等.
+   - 多通道内容打印: 细致区分打印思考链过程(`reasoning_content`) 和 最终输出(`content`).
+4. 精细化的异常分流与容错: 覆盖网络超时(Connect/Read Timeout)、连接重置、HTTP 4xx(鉴权失败、限流 429、模型不存在)、HTTP 5xx(后端 OOM/崩溃 500、网关 502/504)、SSE 协议截断与 JSON 解析异常.
+
+---
+
+### 完整 Python 脚本 (`llm_benchmark_client.py`)
+
+```python
+```
+
+---
+
+### 代码设计与实现亮点说明
+
+1. 8:2 动态分流:
+   使用 `random.random() < STREAM_RATIO` 实现流式与非流式的比例控制, 符合大模型测试场景中对混合流量的测试要求.
+
+2. DeepSeek-R1 / 豆包思考链原生支持:
+   从你给出的 `curl` 响应可以看出模型包含思考过程(`reasoning_content`). 脚本在非流式与流式中分别对 `reasoning_content` 和最终回复 `content` 进行了独立捕获、聚合与日志打印.
+
+3. 网关性能指标全面捕获:
+   自动从响应 Header 中提取了在生产 Mesh(如 Envoy/Istio)环境中常见的追踪头:
+   - `x-envoy-upstream-service-time`: Envoy 代理到后端实际 Pod 的网络+推理总时间.
+   - `trace-id` / `x-cds-request-id`: 分布式追踪 ID, 发生异常时可直接拿着这个 ID 去查后端日志.
+   - `TTFT`(首字延迟计算)与 `TPS`(Tokens/s 吞吐计算).
+
+4. 全方位的异常分流(Error Categorization):
+   - 连接阶段异常: 区分是建立连接超时(`ConnectTimeout`)还是连不上被拒(`ConnectionRefused`).
+   - 推理阶段异常: 区分是生成超时(`ReadTimeout`)还是流在中间被掐断(`ChunkedEncodingError`).
+   - 业务错误码: 400(参数/模型名)、401(Auth Token)、429(QPS 超限)、500(后端显存 OOM/崩溃)、502/504(Gateway Timeout).
 
 --------------------------------------------------------------------------------------------------
 
---------------------------------------------------------------------------------------------------
+
+代码如下所示,
+```python
+```
+不要使用 log 输出日志, 直接使用 print 输出日志信息, 保证日志信息顺序的准确
+
 
 --------------------------------------------------------------------------------------------------
+
+Q: 运行脚本之后, 输出的日志如下:
+```
+```
+从日志中可以看到有两个问题, 一是为什么会出现乱码, 是不是代码中设置的编码有关, 二是似乎并没有按照严格的代码执行顺序输出日志
+
+这是一个在 Python 处理 LLM 流式(SSE)传输中非常典型且隐蔽的底层编码陷阱.
+
+你观察到的两个现象(中文乱码 以及 看似日志乱序/频繁报畸形帧), 本质上是由同一个根本原因引起的连环反应.
+
+---
+
+### 一、两个问题的根本原因深度剖析
+
+#### 1. 为什么会出现乱码(`ç"¨æˆ·` -> `用户`)?
+
+* 根因: `requests.iter_lines(decode_unicode=True)` 内部依赖 `response.encoding`. 如果推理网关返回的 `Content-Type` 是 `text/event-stream` 或 `application/json` 且未显式带上 `charset=utf-8`, `requests` 会按照 HTTP RFC 规范默认采用 `ISO-8859-1`(Latin-1) 解码.
+
+* 现象映射:
+  * 中文"用户"的 UTF-8 字节是: `\xe7\x94\xa8 \xe6\x88\xb7`
+  * 按 `ISO-8859-1` 解码就变成了: `\xe7`(ç) `\x94`(") `\xa8`(¨) `\xe6`(æ) `\x88`(ˆ) `\xb7`(·) $\rightarrow$ `ç"¨æˆ·`.
+
+---
+
+#### 2. 为什么看似"日志乱序"并伴随"畸形帧警告"?
+
+看你日志中的这段核心异常:
+```text
+[DEBUG] [1] SSE 数据流: data: {"id":..., "reasoning_content":"å†
+[WARN]  [1] 忽略畸形 SSE 帧: data: {"id":..., "reasoning_content":"å†
+[DEBUG] [1] SSE 数据流: å­˜"}}],"usage":null,"metrics":null}
+```
+* 根因(Unicode `NEL` 换行符截断陷阱):
+  * 模型当时正在输出中文"内存", 其中"内"的 UTF-8 字节是 `\xe5\x86\x85`, "存"是 `\xe5\xad\x98`.
+  * 当以 `ISO-8859-1` 提前解码为字符串后, 第三个字节 `\x85` 变成了 Unicode 字符 `\u0085`.
+  * 在 Python 3 的字符串切分规则中, `\u0085` 代表 `NEL`(Next Line, 下一行控制符)！
+  * 这导致 `iter_lines(decode_unicode=True)` 误以为遇到了换行符, 强行把一条完整的 JSON 在"内"字中间腰斩为两截！
+* 连锁反应:
+  1. 前半截 `... "reasoning_content":"å†` 被切出来, 由于 JSON 括号未闭合, `json.loads` 报错, 触发了 `[WARN] 忽略畸形 SSE 帧`.
+  2. 后半截 `å­˜"}}],"usage":...` 紧接着被当做下一行读出, 由于它不带 `data:` 前缀, 被当做普通数据打印.
+  3. 这并不是代码没有按顺序执行, 而是完整的单行数据被错误地劈成了两半, 从而产生了日志穿插和乱序的错觉.
+
+---
+
+### 二、彻底解决方案
+
+1. 字节级流式读取(Byte-level Stream): 禁用 `decode_unicode=True`, 让底层仅按照标准的换行符字节 `\n` (`0x0A`) 进行断行, 避免中文字节中的 `0x85` 被误当换行符.
+2. 显式 UTF-8 解码: 在拿到完整的整行字节后, 再执行 `line_bytes.decode('utf-8')`.
+3. 增加 ANSI 颜色开关: 针对某些不兼容 ANSI 颜色的日志终端, 增加 `ENABLE_COLOR` 开关, 避免输出原始的 `[36m` 等字符.
+
+---
+
+### 三、修复后的完整 Python 脚本
+
+```python
+
+```
+
+
+
+--------------------------------------------------------------------------------------------------
+
+
+WITH RECURSIVE `hours_generator` AS (
+    -- 1. 生成当天 00:00:00 到 23:00:00 的 24 个时间点
+    SELECT
+        '2026-08-26 00:00:00' AS `stat_hour_str`,
+        0 AS `h`
+    UNION ALL
+    SELECT
+        DATE_FORMAT(DATE_ADD('2026-08-26 00:00:00', INTERVAL `h` + 1 HOUR), '%Y-%m-%d %H:00:00'),
+        `h` + 1
+    FROM `hours_generator`
+    WHERE `h` < 23
+),
+`daily_logs` AS (
+    -- 2. 统计当天有日志的小时数据
+    SELECT
+        DATE_FORMAT(`created_at`, '%Y-%m-%d %H:00:00') AS `stat_hour_str`,
+        COUNT(1)            AS `request_count`,
+        SUM(`input_token`)  AS `total_input_token`,
+        SUM(`output_token`) AS `total_output_token`,
+        SUM(`cached_token`) AS `total_cached_token`,
+        SUM(`total_token`)  AS `sum_total_tokens`
+    FROM `token_audit_logs`
+    WHERE `original_auth` = 'kn49enthcjzklckavdwhhleo'
+      AND `authorization` = 'd0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o'
+      AND `created_at` >= '2026-08-26 00:00:00.000'
+      AND `created_at` <  '2026-08-27 00:00:00.000'
+    GROUP BY `stat_hour_str`
+)
+-- 3. LEFT JOIN 补齐没有调用记录的小时, 用 0 填充
+SELECT
+    h.`stat_hour_str` AS `stat_hour`,
+    COALESCE(l.`request_count`, 0)      AS `request_count`,
+    COALESCE(l.`total_input_token`, 0)  AS `total_input_token`,
+    COALESCE(l.`total_output_token`, 0) AS `total_output_token`,
+    COALESCE(l.`total_cached_token`, 0) AS `total_cached_token`,
+    COALESCE(l.`sum_total_tokens`, 0)   AS `sum_total_tokens`
+FROM `hours_generator` h
+LEFT JOIN `daily_logs` l ON h.`stat_hour_str` = l.`stat_hour_str`
+ORDER BY h.`stat_hour_str` ASC;
+
+这条 SQL 语句采用了 "分治思想", 巧妙地解决了时序数据统计中经典的"时间断点(某些小时无数据)补零"问题.
+
+整条语句由 3 个核心部分组成:
+
+1. `hours_generator`: 生成当天 24 个整点时间梯子的"虚拟日历表";
+2. `daily_logs`: 从物理表中统计当天有日志的小时数据;
+3. 主查询(`LEFT JOIN` + `COALESCE`): 以日历表为主表进行左连接, 无数据的小时自动填充为 `0`.
+
+---
+
+### 第一部分: `hours_generator`(递归生成 24 小时时间轴)
+
+```sql
+WITH RECURSIVE `hours_generator` AS (
+    -- 1. 锚点查询(初始状态): 生成当天的 0 点, 计数器 h = 0
+    SELECT
+        '2026-08-26 00:00:00' AS `stat_hour_str`,
+        0 AS `h`
+    UNION ALL
+    -- 2. 递归查询(循环迭代): 在上一行的基础上每次 +1 小时, h 计数器 +1
+    SELECT
+        DATE_FORMAT(DATE_ADD('2026-08-26 00:00:00', INTERVAL `h` + 1 HOUR), '%Y-%m-%d %H:00:00'),
+        `h` + 1
+    FROM `hours_generator`
+    WHERE `h` < 23 -- 3. 循环终止条件: h 达到 23 时停止(共生成 0~23 点, 共 24 行)
+)
+```
+
+#### 工作原理(类似编程语言中的 `for` 循环):
+
+* 初始值(Anchor): 放入第一行 `2026-08-26 00:00:00`, `h = 0`.
+* 迭代(Recursive):
+  * 第 2 次循环: 取 `h=0`, 加 1 小时得到 `01:00:00`, 此时 `h=1`.
+  * 第 3 次循环: 取 `h=1`, 加 2 小时得到 `02:00:00`, 此时 `h=2`.
+  * ... 直到 `h=22` 生成 `23:00:00`(`h` 变为 23).
+* 终止条件: `WHERE h < 23` 使得下一次判断不成立, 循环结束.
+
+> 生成结果(内存临时表): 严格包含 24 行(从 `2026-08-26 00:00:00` 到 `2026-08-26 23:00:00`).
+
+---
+
+### 第二部分: `daily_logs`(业务数据预聚合)
+
+```sql
+`daily_logs` AS (
+    SELECT
+        DATE_FORMAT(`created_at`, '%Y-%m-%d %H:00:00') AS `stat_hour_str`,
+        COUNT(1)            AS `request_count`,
+        SUM(`input_token`)  AS `total_input_token`,
+        SUM(`output_token`) AS `total_output_token`,
+        SUM(`cached_token`) AS `total_cached_token`,
+        SUM(`total_token`)  AS `sum_total_tokens`
+    FROM `token_audit_logs`
+    WHERE `original_auth` = 'kn49enthcjzklckavdwhhleo'
+      AND `authorization` = 'd0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o'
+      AND `created_at` >= '2026-08-26 00:00:00.000'
+      AND `created_at` <  '2026-08-27 00:00:00.000'
+    GROUP BY `stat_hour_str`
+)
+```
+
+#### 关键细节解析:
+
+1. `DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')`:
+   * 将带有毫秒的时间(如 `2026-08-26 14:25:36.123`)统一截断为整点字符串 `2026-08-26 14:00:00`, 作为分组依据.
+2. `WHERE` 的左闭右开区间 `[00:00:00, 次日00:00:00)`:
+   * 严格包含当天所有的毫秒(`00:00:00.000` 到 `23:59:59.999`), 避免漏查.
+3. `GROUP BY stat_hour_str`:
+   * 对同一小时内的日志进行累加(`SUM`)和计数(`COUNT`).
+
+> 输出特征: 如果全天只有 10 点、14 点有调用, 那么这个临时表只有 2 行数据.
+
+---
+
+### 第三部分: 主查询(`LEFT JOIN` 关联与 `COALESCE` 补零)
+
+```sql
+SELECT
+    h.`stat_hour_str` AS `stat_hour`,
+    COALESCE(l.`request_count`, 0)      AS `request_count`,
+    COALESCE(l.`total_input_token`, 0)  AS `total_input_token`,
+    COALESCE(l.`total_output_token`, 0) AS `total_output_token`,
+    COALESCE(l.`total_cached_token`, 0) AS `total_cached_token`,
+    COALESCE(l.`sum_total_tokens`, 0)   AS `sum_total_tokens`
+FROM `hours_generator` h
+LEFT JOIN `daily_logs` l ON h.`stat_hour_str` = l.`stat_hour_str`
+ORDER BY h.`stat_hour_str` ASC;
+```
+
+#### 关键技术点:
+1. 以 `hours_generator`(h)作为左表进行 `LEFT JOIN`:
+   * `LEFT JOIN` 会无条件保留左表的全部 24 行.
+   * 当右表 `daily_logs`(l)在某个小时没有数据时, 右表对应的字段值全部为 `NULL`.
+2. `COALESCE(val, 0)` 函数:
+   * 作用: 返回参数列表中第一个非 `NULL` 的值.
+   * 如果 `l.total_input_token` 有值(例如 `5000`), 则返回 `5000`;
+   * 如果为 `NULL`(代表该小时无日志), 则返回默认值 `0`.
+3. `ORDER BY h.stat_hour_str ASC`:
+   * 确保最终输出按时间顺序(从 00 点到 23 点)严格排序.
+
+---
+
+### 数据流动示意图
+
+```text
+[hours_generator (固定24行)]             [daily_logs (仅有日志的小时)]
+00:00:00 ---------------- LEFT JOIN ---> (无数据) ---------> COALESCE 补 0
+...
+10:00:00 ---------------- LEFT JOIN ---> 10:00:00 (5000 Token) -> 输出 5000
+...
+23:00:00 ---------------- LEFT JOIN ---> (无数据) ---------> COALESCE 补 0
+
+===============================================================
+最终输出: 严格 24 行连续的、无 NULL 的整洁时序数据(前端图表可直接渲染)
+```
+
+
+
+
+--------------------------------------------------------------------------------------------------
+
+
+```bash
+export GPUGEEK_API_KEY='d0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o'
+CACHE_PREFIX_TEXT=$(printf '这是用于验证上下文缓存的固定前缀。缓存命中要求后续请求从第一个 token 开始保持完全一致。以下内容不会在不同请求之间发生任何变化。 %.0s' {1..50})
+jq -n --arg prefix "$CACHE_PREFIX_TEXT" '{
+  model: "Vendor3/DeepSeek-V4-Flash",
+  user_id: "cache-demo-20260827-small",
+  messages: [
+    {role: "system", content: $prefix},
+    {role: "user", content: "请仅回答：收到"}
+  ],
+  temperature: 0,
+  max_tokens: 2
+}' |
+curl --silent --show-error \
+  --request POST \
+  --url 'https://api.gpugeek.com/v1/chat/completions' \
+  --header "Authorization: Bearer ${GPUGEEK_API_KEY}" \
+  --header 'Content-Type: application/json' \
+  --data-binary @- |
+jq '{id, usage, metrics}'
+{
+  "id": "cds_a84273d6-c94e-4453-a3a5-2f8ad37e81b9",
+  "usage": {
+    "prompt_tokens": 1709,
+    "completion_tokens": 3,
+    "total_tokens": 1712,
+    "prompt_tokens_details": {
+      "cache_creation": {},
+      "cached_tokens": 1024
+    }
+  },
+  "metrics": {
+    "input_token_count": 1709,
+    "output_token_count": 3,
+    "predict_time": 0.994132913
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+export GPUGEEK_API_KEY='kn49enthcjzklckavdwhhleo'
+CACHE_PREFIX_TEXT=$(printf '这是用于验证上下文缓存的固定前缀。缓存命中要求后续请求从第一个 token 开始保持完全一致。以下内容不会在不同请求之间发生任何变化。 %.0s' {1..50})
+jq -n --arg prefix "$CACHE_PREFIX_TEXT" '{
+  model: "capital",
+  user_id: "cache-demo-20260827-small",
+  messages: [
+    {role: "system", content: $prefix},
+    {role: "user", content: "请仅回答：收到"}
+  ],
+  temperature: 0,
+  max_tokens: 2
+}' |
+curl --silent --show-error \
+  --request POST \
+  --url 'http://172.16.10.55:24182/v1/chat/completions' \
+  --header "Authorization: Bearer ${GPUGEEK_API_KEY}" \
+  --header 'Content-Type: application/json' \
+  --data-binary @- |
+jq '{id, usage, metrics}'
+
+
+$ curl -sv http://172.16.10.55:24182/v1/chat/completions \
+-X POST \
+-H 'Content-Type: application/json' \
+-H 'Authorization: Bearer kn49enthcjzklckavdwhhleo' \
+-d '{
+    "model": "capital",
+    "messages": [
+        {
+            "role": "user",
+            "content": "什么是redis?"
+        }
+    ]
+}'
+
+
+```
+
 
 --------------------------------------------------------------------------------------------------
 
