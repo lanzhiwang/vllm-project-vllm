@@ -647,13 +647,13 @@ ORDER BY h.`stat_hour_str` ASC;
 
 ```bash
 export GPUGEEK_API_KEY='d0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o'
-CACHE_PREFIX_TEXT=$(printf '这是用于验证上下文缓存的固定前缀。缓存命中要求后续请求从第一个 token 开始保持完全一致。以下内容不会在不同请求之间发生任何变化。 %.0s' {1..50})
+CACHE_PREFIX_TEXT=$(printf '这是用于验证上下文缓存的固定前缀. 缓存命中要求后续请求从第一个 token 开始保持完全一致. 以下内容不会在不同请求之间发生任何变化.  %.0s' {1..50})
 jq -n --arg prefix "$CACHE_PREFIX_TEXT" '{
   model: "Vendor3/DeepSeek-V4-Flash",
   user_id: "cache-demo-20260827-small",
   messages: [
     {role: "system", content: $prefix},
-    {role: "user", content: "请仅回答：收到"}
+    {role: "user", content: "请仅回答: 收到"}
   ],
   temperature: 0,
   max_tokens: 2
@@ -694,13 +694,13 @@ jq '{id, usage, metrics}'
 
 
 export GPUGEEK_API_KEY='kn49enthcjzklckavdwhhleo'
-CACHE_PREFIX_TEXT=$(printf '这是用于验证上下文缓存的固定前缀。缓存命中要求后续请求从第一个 token 开始保持完全一致。以下内容不会在不同请求之间发生任何变化。 %.0s' {1..50})
+CACHE_PREFIX_TEXT=$(printf '这是用于验证上下文缓存的固定前缀. 缓存命中要求后续请求从第一个 token 开始保持完全一致. 以下内容不会在不同请求之间发生任何变化.  %.0s' {1..50})
 jq -n --arg prefix "$CACHE_PREFIX_TEXT" '{
   model: "capital",
   user_id: "cache-demo-20260827-small",
   messages: [
     {role: "system", content: $prefix},
-    {role: "user", content: "请仅回答：收到"}
+    {role: "user", content: "请仅回答: 收到"}
   ],
   temperature: 0,
   max_tokens: 2
@@ -734,8 +734,379 @@ $ curl -sv http://172.16.10.55:24182/v1/chat/completions \
 
 --------------------------------------------------------------------------------------------------
 
+Q: 假设你是一位精通 LLM 和 vllm 推理框架的高级研究人员, 现在我使用 vllm 部署了模型推理服务, 正常情况下, 客户端和服务端都可以正常工作, 我现在想探究一下服务端都有哪些常见的错误或者异常, 请问如果使用 vllm 部署推理服务, 常见的错误和异常都有哪些? 他们的影响都是什么?
+
+作为长期从事大语言模型(LLM)系统架构与底层推理优化的研究人员, 在生产环境中运行基于 vLLM 的高并发推理服务时, 尽管在基准测试和常规流量下表现平稳, 但在真实负载、长上下文、多节点/多卡分布式以及复杂网络环境下, 服务端会暴露出一系列特有的系统级、框架级和算法级异常.
+
+以下从显存与缓存系统、分布式通信与多进程、底层 Kernel 与数值计算、异步引擎与并发调度、结构化输出与请求校验五个核心维度, 系统梳理 vLLM 服务端最常见的错误、异常及其对系统的具体影响.
+
+---
+
+### 一、显存与 KV Cache 调度异常
+
+vLLM 依赖其核心的 PagedAttention 与显存预分配机制, 这使得它的显存错误形态与原生 PyTorch 存在显著差异.
+
+#### 1. 初始化显存溢出(Init-time CUDA OOM)
+
+* 典型报错: `torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate ...`
+* 根因:
+  * vLLM 在启动阶段会先加载模型权重, 然后根据 `gpu_memory_utilization`(默认 0.90)计算剩余显存并将其全部分配为 KV Cache Block, 最后还会预热(Profile)并捕获 CUDA Graph.
+  * 若模型权重本身已占满大部分显存, 或显卡上有其他残留进程, 亦或是 CUDA Graph 捕获时的临时张量超出预留的 `(1 - gpu_memory_utilization)` 空间, 会导致启动即崩溃.
+* 影响: 服务无法启动. 在 Kubernetes 集群中表现为 Pod 陷入 `CrashLoopBackOff`.
+
+#### 2. KV Cache 耗尽与请求抢占(KV Cache Preemption / Block Thrashing)
+
+* 典型现象/日志: `Engine preempted request ... due to lack of available KV blocks.`(非 Crash, 但属于严重的系统性能降级异常)
+* 根因:
+  * 并发请求量激增或大量请求进入超长生成阶段, 导致预分配的物理显存块(KV Blocks)被耗尽.
+  * BlockManager 无法为新 Token 分配槽位, 触发调度器的抢占机制: vLLM 会选择某些已在生成的低优先级序列将其 KV Cache 换出(Swap to CPU) 或直接丢弃重计算(Recompute).
+* 影响:
+  * 延时断崖式恶化: P99 甚至 P95 的 TPOT(Time Per Output Token)急剧上升, 由于重算(Recomputation), TTFT 也会出现二次激增.
+  * 有效吞吐量(Goodput)雪崩: GPU 算力被大量浪费在重复计算 Prefill 上, 服务可能陷入"抖动震荡(Thrashing)".
+
+#### 3. 动态多模态/变长 Prefill 导致的运行时运行时 OOM
+
+* 典型报错: `RuntimeError: CUDA out of memory` during execution of forward pass.
+* 根因: 开启 Chunked Prefill 时切片尺寸(`max_num_batched_tokens`)设置过大; 或部署多模态模型(如 Qwen-VL、LLaVA)时, 动态分辨率的高清图片经 ViT 提取出的视觉 Token 数量不可控, 瞬时突增的中间激活值(Activation Memory)击穿了预留空间.
+* 影响: 服务主进程或 Worker 异常退出, 直接导致当批次的所有请求失败.
+
+---
+
+### 二、分布式通信与多卡协作异常(TP / PP)
+
+在部署 70B+ 模型时通常需开启张量并行(Tensor Parallelism, TP), 跨卡乃至跨节点通信是系统的脆弱点.
+
+#### 1. NCCL 通信看门狗超时(NCCL Watchdog Timeout)
+
+* 典型报错:
+  * `RuntimeError: NCCL error in: .../torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp, unhandled system error / watchdog timeout`
+* 根因:
+  * 单 Rank 卡死/掉队(Straggler): 多卡并行时, 必须所有卡执行同步集合通信(All-Reduce). 若其中一张卡遇到硬件降频、驱动死锁或长任务(如长上下文 Prefill 耗时过久且通信心跳被阻断), 其他卡会持续阻塞在 All-Reduce, 最终触发 NCCL 的默认看门狗超时(通常为几十分钟, 生产通常配得较短).
+  * 物理网络波动/NVLink 链路故障.
+* 影响: 全服务死锁或崩溃. 由于 TP 各 Rank 是强绑定的, 任意一张卡 NCCL 崩溃会导致整个 Ray Actor 或多进程集群瓦解, 所有进行中的流式连接瞬间断开.
+
+#### 2. Ray / IPC 多进程非正常退出(Worker Disconnected)
+
+* 典型报错: `ray.exceptions.RayActorError: The actor died unexpectedly...` 或 `RuntimeError: Engine background task failed`
+* 根因:
+  * TP Worker 进程因为系统 OOM Killer(RAM 耗尽而非显存)、CUDA 驱动崩溃、Segmentation Fault 异常终止.
+  * vLLM 的 `AsyncLLMEngine` 在主进程监测到 Worker 管道断开.
+* 影响: 服务不可用. 服务端口虽可能响应 HTTP 请求, 但任何调用都会抛出 `500 Internal Server Error`, 必须彻底重启服务实例.
+
+---
+
+### 三、底层 Kernel 与数值计算异常
+
+#### 1. CUDA 非法内存访问(CUDA Illegal Memory Access)
+
+* 典型报错: `RuntimeError: CUDA error: an illegal memory access was encountered`
+* 根因:
+  * FlashAttention、PagedAttention 或定制算子(如 FP8 GEMM、AWQ/GPTQ 反量化 Kernel、Triton 算子)存在 Edge Case 越界 Bug.
+  * 算子编译版本与当前显卡架构(Compute Capability)或驱动/CUDA Toolkit 不匹配(例如在 Hopper/Ada 架构上运行未经适配合并的旧版 Triton 算子).
+* 影响: 硬件上下文污染, 服务不可逆崩溃. 一旦出现该错误, 当前 CUDA Context 会彻底失效, 导致同显卡内后续所有 CUDA 操作均无法执行, 必须强杀并重启整个 Python 进程.
+
+#### 2. 数值不稳定导致 Logits 出现 NaN/Inf 与采样死循环
+
+* 典型报错: `RuntimeError: probability tensor contains either inf, nan or element < 0`
+* 根因:
+  * 在半精度(FP16)下, 超深层或大批次推理导致中间激活值数值溢出;
+  * 模型由于输入畸变输出异常的极值, Softmax 之后全为 0 或产生 NaN;
+  * 未正确触发 EOS(结束符)且客户端未传 `max_tokens`, 模型陷入无意义重复生成或死循环.
+* 影响:
+  * 触发异常的单个请求立即中断(500 错误);
+  * 如果是死循环生成, 会长期霸占 KV Cache 和调度 Slot, 逐步拖垮整个集群的吞吐.
+
+---
+
+### 四、异步引擎与服务调度异常(Serving Layer)
+
+vLLM 对外提供 OpenAI 兼容的 HTTP API, 结合了 FastAPI/Uvicorn、AsyncIO 驱动的 `AsyncLLMEngine`.
+
+#### 1. 客户端提前断连(Client Disconnect & Broken Pipe)
+
+* 典型日志: `asyncio.CancelledError`、`ClientDisconnected`
+* 根因:
+  * 客户端设置了较短的 HTTP 超时时间, 在 Prefill 排队时间过长时放弃等待并切断了 TCP 连接;
+  * 客户端流式读取时主动点击"停止生成".
+* 影响:
+  * 在旧版 vLLM 中, 这可能导致后台仍在为已死请求白白执行解码(幽灵计算, Ghost Computation);
+  * 在高并发场景下, 海量并发连接断开可能引起 `AsyncIO` 协程泄露, 甚至因异常未捕获导致引擎抛出全局未能处理的错误.
+
+#### 2. 事件循环阻塞与 CPU 瓶颈(Event Loop Starvation)
+
+* 典型现象: GPU 利用率时高时低, HTTP 请求排队时间(Queue Time)极长, 即使 GPU 显存和算力均有富余.
+* 根因:
+  * 分词(Tokenization)与反分词(Detokenization)瓶颈: AsyncLLMEngine 的主进程需要执行 Python 层的 Tokenizer 编解码, 当大并发流式输出时, 极高频的 detokenize 操作消耗大量 CPU 时间, 造成单线程事件循环阻塞;
+  * 数据后处理、Logits 过滤(如复杂的 top_k/top_p CPU 实现)霸占 GIL.
+* 影响:
+  * 系统吞吐无法线性放大, 请求在 Web 框架排队层超时;
+  * 误触发健康检查探针(如 K8s Liveness/Readiness Probe 报 503/Timeout), 导致服务容器被集群误判并被反复重启.
+
+---
+
+### 五、协议、约束与结构化输出异常
+
+#### 1. 上下文长度溢出(Context Length Exceeded)
+
+* 典型报错: `BadRequestError: This model's maximum context length is X tokens. However, you requested Y tokens...`
+* 根因: 客户端发送的 Prompt Token 数 + `max_tokens` > 模型的 `max_model_len`(vLLM 启动参数).
+* 影响: 轻度影响, 立即返回 400 Bad Request. 虽不会拖垮服务, 但若上游无重试或截断逻辑, 会产生坏死请求流.
+
+#### 2. 引导解码/结构化输出引擎崩溃(Guided Decoding / JSON Schema 故障)
+
+* 典型报错: `ValueError: ... Outlines / XGrammar / Guidance failed to parse grammar` 或生成阶段被强制屏蔽所有 Token.
+* 根因:
+  * 客户端传入了极度复杂的 JSON Schema 或非常宽泛/相互矛盾的 Regex;
+  * 结构化生成状态机(FSM/Grammar)在构建阶段消耗过多 CPU/RAM, 或者构建出的 Mask 导致词表里所有 Token 的概率都被置为 `-inf`(无路可走).
+* 影响:
+  * 导致对应请求报错中断;
+  * 某些极度复杂的 Schema 构建过程甚至会长时间阻塞主进程的 Event Loop, 导致整个服务器数秒内无法响应其他任何正常请求.
+
+---
+
+### 总结与防御对照表
+
+| 异常分类   | 典型场景/报错                     | 对系统的核心影响               | 工业级关键应对措施                                                     |
+| :--------- | :-------------------------------- | :----------------------------- | :--------------------------------------------------------------------- |
+| 显存异常   | Init CUDA OOM / Dynamic OOM       | 服务无法启动 / 进程被 Kill     | 调小 `gpu_memory_utilization` (如 0.85); 调优 `max_num_batched_tokens` |
+| 调度异常   | KV Cache Preemption (抢占/重算)   | 延迟 P99 飙高、吞吐降级、震荡  | 开启 Prefill-Decode 解耦; 合理限制 `max_num_seqs`                      |
+| 通信异常   | NCCL Watchdog Timeout             | 多卡死锁、整个服务瘫痪         | 设置合理的 `NCCL_TIMEOUT`; 检查物理 NVLink; 排查长短请求不均           |
+| 底层异常   | CUDA Illegal Memory Access        | 硬件 Context 损毁, 需冷重启    | 统一 CUDA/Driver 与 Triton 版本; 关闭实验性 Kernel 融合                |
+| 服务层异常 | Event Loop 阻塞 / Detokenize 拥堵 | GPU 饥饿、K8s 探针超时误杀容器 | 开启多进程 Detokenization 分流; 增加 Uvicorn 调度缓冲                  |
+| 结构化异常 | Guided Decoding FSM 解析失败      | CPU 飙高、请求被拒或长时间卡死 | 对客户端 JSON Schema 深度进行预校验, 避免极端嵌套                      |
+
 --------------------------------------------------------------------------------------------------
+
+Q: 作为 vllm 部署的推理服务的客户端, 是否有办法感知到上面的这些异常, 如何提高客户端请求代码的健壮性和鲁棒性?
+
+作为客户端, 要应对由 vLLM 服务端复杂机制(KV Cache 抢占、算子越界、NCCL 死锁、异步队列拥堵)引发的异常, 首先需要建立多维度的感知能力, 随后通过确定性前置防御与弹性容错机制来保障生产级的高可用.
+
+---
+
+### 第一部分: 客户端如何精准"感知"服务端的各类异常?
+
+客户端不能仅靠"请求成功/失败"做二元判断, 需要从 `HTTP 状态/错误体`、`网络传输层`、`流式协议(SSE)` 以及 `延迟指标(TTFT/TPOT)` 四个维度进行细分感知:
+
+| 服务端底层异常            | 客户端感知到的现象 / 报错                                                            | 感知层级与判定特征                                                 |
+| :------------------------ | :----------------------------------------------------------------------------------- | :----------------------------------------------------------------- |
+| 上下文溢出 / 参数校验失败 | HTTP `400 Bad Request` <br> `{"error": {"type": "invalid_request_error", ...}}`      | 应用协议层: 错误明确且确定, 不可盲目重试.                          |
+| 队列拥堵 / 服务过载       | HTTP `429 Too Many Requests` 或 `503 Service Unavailable`                            | 应用协议层: 提示服务端已饱和, 需退避.                              |
+| KV Cache 抢占 / 调度重算  | 链接正常, 但 TTFT(首字延迟) 或单 Token 间隔(TPOT)突增数倍至数十倍                    | 指标感知: 未报错但性能严重降级, 需要 SLA 监控告警.                 |
+| NCCL 死锁 / Worker 卡死   | 静默挂起(TCP 保持连接但不再吐出任何 Token)直至客户端超时                             | 流式传输层: Inter-Token Latency(流闲置超时)告警.                   |
+| 运行时 OOM / Kernel 崩溃  | 流式传输中途截断: `httpx.RemoteProtocolError` / `ConnectionResetByPeer` / HTTP `500` | 网络与流协议层: 流意外中断, 且未收到带有 `finish_reason` 的结束包. |
+| 进程完全宕机 / 容器重启   | HTTP `502 Bad Gateway` / `ConnectRefusedError`                                       | 网络传输层: 网关已失去后端 Pod, 或端口未开放.                      |
+
+---
+
+### 第二部分: 提升客户端健壮性与鲁棒性的核心策略
+
+#### 1. 多层级细粒度超时控制(避免挂起)
+
+LLM 生成具有"长等待、持续吐字"的特点, 绝对不能使用一个全局固定的 Read Timeout. 必须拆分为三段超时:
+
+* Connect Timeout(如 3~5s): 判断节点网络可达性.
+* TTFT / First-Token Timeout(如 15~30s): 涵盖 Prompt 分词、排队调度与 Prefill 耗时. 超过此时间, 说明服务端处于重度过载或队列死锁中.
+* Inter-Token Timeout / Chunk Timeout(如 5~10s): 每接收到一个流式 Chunk, 就重置计时器. 这是感知 NCCL 死锁、Worker 崩溃断连最有效的手段.
+
+#### 2. 分类智能重试与退避机制(Exponential Backoff & Jitter)
+
+盲目重试会导致服务端发生雪崩, 必须严格分类:
+
+* 绝对不重试(Non-retryable):
+  * `400 Bad Request`(上下文超长、JSON Schema 错误等参数问题).
+  * `422 Unprocessable Entity`.
+
+* 带抖动的指数退避重试(Retry with Jitter):
+  * `429 Too Many Requests`、`503 Service Unavailable`: 采用指数退避(`base * 2^attempt + uniform(-jitter, jitter)`), 避免形成重试风暴(Thundering Herd).
+
+* 快速换节点重试(Failover Retry):
+  * `502 Bad Gateway`、`ConnectionRefused`、`Chunk Timeout`: 意味着当前节点可能 CUDA 崩溃或 NCCL 死锁, 若有多实例/服务网关, 应立即换节点重试.
+
+#### 3. 客户端前置防御(Shift-Left Defense)
+
+将部分校验前移到客户端, 减轻服务端压力:
+
+* 本地 Token 预计算: 在发送请求前, 利用本地 Tokenizer(如 HuggingFace Fast Tokenizer)计算 Prompt 长度, 断言 `len(prompt_tokens) + max_tokens <= max_model_len`. 超长时提前截断或抛出客户端异常, 避免无效的网络传输与 400 失败.
+* Schema 语法预校验: 在发起 Guided Decoding 前, 本地用 `jsonschema` 库验证 Schema 的合法性, 避免导致服务端 FSM 编译异常.
+
+#### 4. 完整的流式生命周期与完整性校验(Integrity Checking)
+
+* 服务端在遭遇 OOM 或强制 Kill 时, TCP 连接可能直接中断.
+* 客户端必须验证 SSE 流的完整性: 只有收到包含明确 `finish_reason`(如 `"stop"`、`"length"`、`"tool_calls"`)的数据帧, 才视为一次合法且完整的输出. 如果流在没有 `finish_reason` 的情况下结束, 即便 HTTP 状态码此前是 200, 也要判定为服务端运行时崩溃, 触发重试或补救.
+
+#### 5. 主动取消以保护服务端(Graceful Cancellation)
+
+* 当终端用户取消请求(如点击前端"停止", 或上游业务超时触发), 客户端应当显式调用 HTTP Client 的 `aclose()` 关闭连接.
+* vLLM 的 `AsyncLLMEngine` 会监听断连事件. 客户端优雅断开能让服务端迅速中断前向推理, 及时释放对应的 KV Cache 块, 防止"幽灵计算"继续拖垮服务器.
+
+---
+
+### 第三部分: 生产级 Python 鲁棒客户端实现范例
+
+以下代码结合了分段超时、流式闲置检测(Watchdog)、前置 Token 校验、细分类指数退避及完整性校验:
+
+```python
+import asyncio
+import json
+import logging
+import random
+import time
+from typing import AsyncGenerator, Dict, Any, Optional
+import httpx
+from transformers import AutoTokenizer
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("RobustLLMClient")
+
+class RobustLLMClient:
+    def __init__(
+        self,
+        base_url: str,
+        model_name: str,
+        tokenizer_path: str,
+        max_model_len: int = 8192,
+        connect_timeout: float = 5.0,
+        ttft_timeout: float = 30.0,
+        chunk_timeout: float = 8.0,
+        max_retries: int = 3,
+    ):
+        self.base_url = base_url.rstrip("/")
+        self.model_name = model_name
+        self.max_model_len = max_model_len
+        self.connect_timeout = connect_timeout
+        self.ttft_timeout = ttft_timeout
+        self.chunk_timeout = chunk_timeout
+        self.max_retries = max_retries
+
+        # 本地初始化 fast tokenizer 进行前置防御
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, use_fast=True)
+
+        # 针对长连接建立连接池
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=connect_timeout, read=None, write=10.0, pool=10.0),
+            limits=httpx.Limits(max_connections=200, max_keepalive_connections=50)
+        )
+
+    def _pre_validate_input(self, prompt: str, max_tokens: int) -> int:
+        """前置防御: 验证 Prompt Token 长度"""
+        prompt_token_ids = self.tokenizer.encode(prompt)
+        prompt_len = len(prompt_token_ids)
+        if prompt_len + max_tokens > self.max_model_len:
+            raise ValueError(
+                f"ClientValidationError: Context exceeded. Prompt ({prompt_len}) + "
+                f"MaxTokens ({max_tokens}) > Limit ({self.max_model_len})"
+            )
+        return prompt_len
+
+    async def generate_stream(
+        self, prompt: str, max_tokens: int = 512, sampling_params
+    ) -> AsyncGenerator[str, None]:
+        """带熔断、分段超时与自愈能力的鲁棒流式生成器"""
+        self._pre_validate_input(prompt, max_tokens)
+
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "max_tokens": max_tokens,
+            "stream": True,
+            sampling_params,
+        }
+
+        url = f"{self.base_url}/v1/completions"
+
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                async for token in self._execute_request(url, payload):
+                    yield token
+                return  # 正常完成, 退出重试循环
+
+            except (httpx.HTTPStatusError) as e:
+                status_code = e.response.status_code
+                if status_code == 400:
+                    logger.error(f"Client Parameter Error: {e.response.text}. Non-retryable.")
+                    raise
+                elif status_code in (429, 503):
+                    await self._sleep_with_backoff(attempt, is_rate_limit=True)
+                else:
+                    logger.warning(f"Server error {status_code} on attempt {attempt}/{self.max_retries}")
+                    await self._sleep_with_backoff(attempt, is_rate_limit=False)
+
+            except (TimeoutError, httpx.ReadError, httpx.RemoteProtocolError) as e:
+                # 涵盖: TTFT 超时、Chunk 超时、服务端 Crash、连接中途 Reset
+                logger.warning(f"Transport/Timeout failure: {str(e)} on attempt {attempt}/{self.max_retries}")
+                if attempt == self.max_retries:
+                    raise RuntimeError(f"Service degraded. Max retries reached: {str(e)}")
+                await self._sleep_with_backoff(attempt, is_rate_limit=False)
+
+    async def _execute_request(self, url: str, payload: Dict[str, Any]) -> AsyncGenerator[str, None]:
+        """单次请求执行: 实施严格的分段超时与 finish_reason 校验"""
+        req = self.client.build_request("POST", url, json=payload)
+        response = await self.client.send(req, stream=True)
+
+        if response.status_code != 200:
+            await response.aread()
+            response.raise_for_status()
+
+        received_first_token = False
+        is_generation_finished = False
+        stream_iter = response.aiter_lines()
+
+        try:
+            while True:
+                # 动态设置当前阶段的超时阈值
+                current_timeout = self.chunk_timeout if received_first_token else self.ttft_timeout
+                try:
+                    line = await asyncio.wait_for(stream_iter.__anext__(), timeout=current_timeout)
+                except StopAsyncIteration:
+                    break
+                except asyncio.TimeoutError:
+                    if not received_first_token:
+                        raise TimeoutError(f"TTFT Timeout ({self.ttft_timeout}s): Server queue hung or prefill stuck.")
+                    else:
+                        raise TimeoutError(f"Chunk Timeout ({self.chunk_timeout}s): NCCL deadlock or worker died mid-stream.")
+
+                if not line.startswith("data: "):
+                    continue
+                data_str = line[6:].strip()
+                if data_str == "[DONE]":
+                    break
+
+                chunk = json.loads(data_str)
+                choice = chunk["choices"][0]
+                text_delta = choice.get("text", "")
+                finish_reason = choice.get("finish_reason")
+
+                if text_delta:
+                    received_first_token = True
+                    yield text_delta
+
+                if finish_reason is not None:
+                    is_generation_finished = True
+
+            # 完整性校验: 流断开但无结束标记, 判定为底层 Kernel 或 OOM 崩溃
+            if not is_generation_finished:
+                raise httpx.RemoteProtocolError("Stream abruptly closed without a valid finish_reason.")
+
+        finally:
+            # 保证客户端退出或异常中断时, 主动发信号断连, 释放服务端 KV blocks
+            await response.aclose()
+
+    async def _sleep_with_backoff(self, attempt: int, is_rate_limit: bool):
+        base = 2.0 if is_rate_limit else 0.5
+        delay = (base * (2  (attempt - 1))) + random.uniform(0.1, 0.5)
+        logger.info(f"Backing off for {delay:.2f}s before retry...")
+        await asyncio.sleep(delay)
+
+    async def close(self):
+        await self.client.aclose()
+```
+
+### 架构级建议
+
+1. 客户端断路器(Circuit Breaker): 如果下游应用集群规模庞大, 单在客户端做退避仍可能带来冲击. 建议集成断路器(如 `pybreaker`), 当连续出现 5 次以上超时或 500 错误时, 熔断所有请求 30 秒, 直接降级(例如返回预设兜底答案或切流至备份模型).
+2. 连接池心跳维护: vLLM 对静默长连接敏感, 客户端在配置连接池时应启用合理的 TCP Keepalive, 探测失效套接字, 防止把失效连接复用给后续请求.
 
 --------------------------------------------------------------------------------------------------
 
 --------------------------------------------------------------------------------------------------
+
