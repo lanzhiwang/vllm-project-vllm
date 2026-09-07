@@ -1108,5 +1108,732 @@ class RobustLLMClient:
 
 --------------------------------------------------------------------------------------------------
 
+Q: 在上述服务端和客户端的各种异常中, 我需要测试环境中主动触发各种异常, 验证异常产生后的各种处理办法是否有效, 请问我应该如何主动的触发各种异常
+
+在测试环境中对 LLM 推理服务进行故障注入(Fault Injection / Chaos Testing), 是验证客户端容错、重试熔断、降级逻辑以及服务端自愈能力的关键步骤.
+
+以下按照异常类型, 提供一套在测试环境中可复现、操作明确、贴近真实事故的主动触发方案、观测指标及验证目标.
+
+---
+
+### 一、显存与 KV Cache 异常注入
+
+#### 1. 触发: 启动时显存溢出(Init CUDA OOM)
+
+* 触发手段:
+  * 方法 A(抢占显存法): 在启动 vLLM 之前, 先运行一段 Python 脚本吃掉大部分显存, 然后再启动 vLLM:
+    ```python
+    # pre_occupy.py: 占用例如 80% 的显存
+    import torch, time
+    x = torch.empty((80, 1024, 1024, 1024 // 4), device='cuda', dtype=torch.float32) # 约占用 80GB
+    time.sleep(3600)
+    ```
+  * 方法 B(参数压榨法): 启动 vLLM 时将 `--gpu-memory-utilization` 设置为 `0.99`, 并配合极大模型或极大的 `--max-model-len 32768`.
+* 服务端现象: 启动阶段抛出 `torch.cuda.OutOfMemoryError`, 容器或进程直接退出(Exit Code 1).
+* 客户端验证目标: 客户端发起请求应立即捕获 `httpx.ConnectError`(拒绝连接)或网关层的 `502 Bad Gateway`, 验证客户端的健康检查与告警机制.
+
+#### 2. 触发: KV Cache 耗尽与请求抢占(Preemption / Thrashing)
+
+* 触发手段:
+  * 限制 vLLM 的 KV Cache 显存配额: 启动时加入参数 `--gpu-memory-utilization 0.25`(或更低, 甚至指定 `--num-gpu-blocks-override 64`, 极大限制物理 Block 总数).
+  * 并发打入长输出请求: 用并发脚本同时发起 10 个请求, 参数设为 `max_tokens=2048`.
+* 服务端现象: 日志出现 `Engine preempted request ... due to lack of available KV blocks`, 指标 `vllm:num_preemptions_total` 快速上涨.
+* 客户端验证目标:
+  * 客户端流式生成的 TTFT 和 TPOT(单 Token 耗时)产生明显毛刺.
+  * 验证客户端分段超时计时器是否被正常重置, 或者是否能识别出延迟退化并向监控系统上报 SLA 异常.
+
+---
+
+### 二、分布式与通信异常注入(TP / Ray / NCCL)
+
+#### 1. 触发: Worker 进程暴毙(Process Crash)
+
+* 触发手段:
+  * 以张量并行启动服务(如 `--tensor-parallel-size 2`).
+  * 在发起推理的途中, 直接在宿主机上找到其中一个 Worker 进程并强杀:
+    ```bash
+    # 查找 vLLM 相关子进程
+    ps aux | grep vllm
+    # 强制杀死某一个特定的 Worker PID
+    kill -9 <Worker_PID>
+    ```
+* 服务端现象: Ray 抛出 `RayActorError` 或主进程日志抛出 `RuntimeError: Engine background task failed`.
+* 客户端验证目标:
+  * 正在进行的流式传输应立即抛出 `httpx.RemoteProtocolError` 或连接中断.
+  * 验证客户端是否感知到"流非正常结束(未收到 `finish_reason`)", 并将其标记为传输异常进行切流重试(Failover).
+
+#### 2. 触发: NCCL 死锁与流式静默挂起(Watchdog Timeout)
+
+* 触发手段:
+  * 启动前大幅缩短超时时间(默认 30 分钟过长, 测试不便):
+    ```bash
+    export NCCL_TIMEOUT=15  # 设为 15 秒
+    python -m vllm.entrypoints.openai.api_server ... --tensor-parallel-size 2
+    ```
+  * 客户端发起一个请求, 在生成过程中, 暂停(挂起)其中一个 Rank 进程:
+    ```bash
+    kill -STOP <Worker_PID>   # 挂起该进程, 卡死集合通信
+    ```
+* 服务端现象: 另一个 Worker 和主进程由于等不到通信信号, 进入阻塞状态；15 秒后触发看门狗崩溃 `NCCL watchdog thread: detected timeout`.
+* 客户端验证目标:
+  * 重点验证客户端的 Inter-Token / Chunk Timeout(流闲置超时).
+  * 在 15 秒服务端崩溃前, 客户端自身的 Chunk Timeout(如设为 5s)应先于服务端报错主动断开, 证明客户端具备防死锁挂起能力.
+
+---
+
+### 三、调度并发与队列压力注入
+
+#### 1. 触发: 队列打满与超载拒收(429 / 503)
+
+* 触发手段:
+  * 启动时人为压缩并发槽位: `--max-num-seqs 2 --max-num-batched-tokens 512`.
+  * 客户端使用并发工具瞬间发送 50 个复杂请求(例如使用 `asyncio.gather`).
+* 服务端现象: 请求排队队列溢出, 服务端开始拒绝连接或向反向代理抛出高延迟响应.
+* 客户端验证目标:
+  * 客户端捕获到 `429 Too Many Requests` 或 `503 Service Unavailable`.
+  * 验证客户端是否执行了带随机抖动的指数退避(Exponential Backoff with Jitter), 而不是暴力无脑重试加剧雪崩.
+
+#### 2. 触发: 客户端异常主动断连(Client Broken Pipe / Ghost Inference)
+
+* 触发手段:
+  * 客户端发起流式生成请求(`max_tokens=2048`), 设置在收到第 5 个 Token 时, 主动切断连接:
+    ```python
+    # 模拟用户点击了前端界面的"停止生成"按钮
+    async for chunk in client.generate_stream(prompt):
+        count += 1
+        if count == 5:
+            await response.aclose()  # 主动抛出取消/关闭 socket
+            break
+    ```
+* 服务端现象:
+  * 服务端 Uvicorn / AsyncLLMEngine 应抛出 `ClientDisconnected` 或捕获到 `asyncio.CancelledError`.
+  * 日志提示 `Request ... was cancelled by client`.
+* 服务端验证目标: 检查 GPU 显存, 确认该请求的 KV Cache Block 是否被 BlockManager 立即释放, 证明服务端没有陷入"幽灵计算".
+
+---
+
+### 四、协议、参数与结构化生成异常注入
+
+#### 1. 触发: 上下文超长(Context Length Exceeded / 400 错误)
+
+* 触发手段:
+  * 构造一个极长的 Prompt(超出模型的 `max_model_len`), 或者 `prompt_tokens + max_tokens > max_model_len`.
+    ```python
+    # 故意发送一个超出长度的 Payload
+    payload = {
+        "model": "qwen",
+        "prompt": "hello " * 40000,
+        "max_tokens": 100
+    }
+    ```
+* 服务端现象: 立即返回 HTTP `400 Bad Request`, 包含错误体 `invalid_request_error`.
+* 客户端验证目标:
+  * 若客户端有前置 Tokenizer 检查, 此请求应该在本地直接拦截并报错, 根本不会发出网络请求.
+  * 若直接发出, 验证客户端是否识别为 400 并不执行重试(Non-retryable), 防止无意义占用带宽.
+
+#### 2. 触发: 结构化引导解码崩溃(Guided Decoding / Schema FSM 失败)
+
+* 触发手段:
+  * 传入语法错误的 Regex, 或逻辑相互矛盾的 JSON Schema:
+    ```python
+    # 传入非法的正则表达式语法(例如括号不闭合)
+    payload = {
+        "model": "qwen",
+        "prompt": "Generate json",
+        "guided_regex": "(?P<invalid_syntax"
+    }
+    ```
+  * 传入一个让词表全被屏蔽的严格约束(例如要求输出大写字母, 但限定只用数字回复).
+* 服务端现象: Outlines / XGrammar 引擎解析失败, 服务端返回 `400` 或生成阶段由于没有合法 Token 报错终止.
+* 客户端验证目标: 验证客户端对特殊生成参数校验异常的捕获与降级处理(如通知调用方 Prompt/Schema 错误).
+
+---
+
+### 五、底层网络异常注入(模拟传输层黑天鹅)
+
+如果你的服务端部署在容器(Docker / K8s)或远程节点, 推荐使用 Linux 自带的 `tc` (Traffic Control) 或轻量代理 Toxiproxy 注入传输层故障:
+
+#### 1. 制造高丢包与断流(丢弃部分 Chunk)
+
+在服务端执行命令:
+```bash
+# 增加 2 秒的网络延迟, 并设置 20% 的随机丢包
+sudo tc qdisc add dev eth0 root netem delay 2000ms loss 20%
+```
+* 客户端验证目标: 验证客户端对于"偶尔卡顿"与"连接中断"的边界判定.
+
+#### 2. 清理网络混沌配置
+
+测试完成后, 务必还原网络环境:
+```bash
+sudo tc qdisc del dev eth0 root
+```
+
+---
+
+### 自动化测试用例实施建议矩阵
+
+| 序号  | 测试用例名称       | 核心注入动作                            | 客户端预期表现                                |
+| :---- | :----------------- | :-------------------------------------- | :-------------------------------------------- |
+| TC-01 | 参数溢出防御测试   | 发送 100k Token 的 Prompt               | 本地前置拦截 / 捕获 400 立即终止, 无重试      |
+| TC-02 | Worker 崩溃测试    | 生成中对 TP Rank1 执行 `kill -9`        | 感知流中途断开, 触发切流至备用节点            |
+| TC-03 | 算力挂起死锁测试   | 生成中执行 `kill -STOP`                 | Chunk Timeout (5s) 先于系统超时触发, 主动断连 |
+| TC-04 | 突发流量拥塞测试   | 瞬时并发 100+ 请求(单机只能承载 10)     | 捕获 429, 执行带抖动的指数退避重试            |
+| TC-05 | 客户端主动取消测试 | 客户端收到第 5 个 Token 发起 `aclose()` | 服务端显存迅速回落, 无残留推理计算            |
+
 --------------------------------------------------------------------------------------------------
 
+Q: 有成熟的在测试环境中对 LLM 推理服务进行故障注入的框架或者工具吗?
+
+在当前的工程实践中, 由于大语言模型推理服务横跨了"HTTP/SSE 流式应用层"、"显存与 KV Cache 调度层"以及"GPU 算子与 NCCL 通信层", 目前业界并没有一个单一的、开箱即用的"LLM 专属一键式混沌工程工具".
+
+工业界(如字节、阿里、NVIDIA、Red Hat 等)在测试 vLLM、Triton 等推理服务时, 普遍采用的是分层组合的成熟开源工具链. 以下是经过生产检验的成熟框架和工具选型推荐:
+
+---
+
+### 一、传输层与流式协议故障注入(首选: Toxiproxy)
+
+在测试 SSE(Server-Sent Events)断流、Inter-Token 卡顿、TTFT 超时时, 常规的网络工具很难精确控制"数据块(Token)级别"的传输.
+
+#### 推荐工具: Shopify Toxiproxy
+
+* 定位: 专门用于在测试环境中模拟网络异常的 TCP 代理工具, 支持通过 REST API 动态热插拔故障(Toxics).
+* 为什么适合 LLM 流式推理:
+  * 模拟 Token 吐字停顿 / 卡死: 使用 `latency` 或 `jitter` toxic, 动态给 TCP 数据流增加延迟, 验证客户端的 Chunk Timeout.
+  * 模拟中间断流(Broken Stream): 使用 `slicer` toxic 将 TCP 数据包切碎并在中途使用 `reset_peer` 或 `timeout` 强行阻断连接, 验证客户端能否发现"未收到 `finish_reason` 却断连"的异常.
+  * 模拟慢客户端(Slow Client): 使用 `bandwidth` 限制客户端下行速率, 测试服务端发送队列打满后的背压(Backpressure)机制.
+* 使用方式示例(Python 集成测试):
+  ```python
+  from toxiproxy import Toxiproxy
+
+  proxy = Toxiproxy().get_proxy("vllm_service")
+  # 动态注入: 在传输到一半时切断连接
+  proxy.add_toxic(type="reset_peer", name="sudden_disconnect", stream="downstream", toxicity=1.0)
+  ```
+
+---
+
+### 二、容器与分布式集群混沌测试(推荐: Chaos Mesh / ChaosBlade)
+
+当模型以张量并行(TP>1)部署在 Kubernetes 或物理机多卡环境时, 用于模拟 Worker 崩溃、容器漂移、CPU 争抢.
+
+#### 1. Chaos Mesh(CNCF 毕业级云原生混沌平台)
+
+如果 vLLM 部署在 Kubernetes 上, Chaos Mesh 是最成熟的选择:
+* 核心能力匹配:
+  * `PodChaos` / `ContainerChaos`: 定时或随机 `Kill` 掉某个 Worker Pod, 测试 API 网关是否能实现秒级摘流(Pod Eviction)与切换.
+  * `NetworkChaos`(网络分区): 阻断张量并行 Pod 之间的通信端口(如 PyTorch DDP / NCCL 默认的通信端口, 或阻断两台机器间的 RDMA/RoCE 网卡), 验证分布式推理是否会触发 `NCCL_TIMEOUT` 优雅退出.
+  * `StressChaos`: 注入 CPU 争抢和宿主机物理内存压迫, 测试 Python 运行时的 Tokenizer 性能退化.
+
+#### 2. ChaosBlade(阿里开源的轻量级故障注入工具)
+
+如果 vLLM 部署在裸金属物理机(Bare Metal)或单机多卡环境中:
+* 核心优势: 无需庞大的 K8s 控制面, 一条命令行即可精准操控进程.
+* 典型测试动作:
+  ```bash
+  # 1. 模拟 NCCL 卡死: 给某个 TP worker 发送 SIGSTOP 挂起进程
+  blade create process stop --process vllm --process-cmd-keyword "worker"
+
+  # 2. 模拟 Worker 突发死亡: 直接 SIGKILL
+  blade create process kill --process-cmd-keyword "ray::"
+  ```
+
+---
+
+### 三、GPU 硬件、驱动与通信层故障模拟
+
+传统混沌工具默认只能控制 CPU 和网卡, 针对 GPU 和 NCCL 的成熟工具如下:
+
+#### 1. NVIDIA DCGM Diagnostic & System Management (`nvidia-smi`)
+
+NVIDIA 官方提供的成熟运维与诊断套件:
+* 模拟计算变慢(Straggler / 掉队卡异常):
+  使用 `nvidia-smi` 锁定其中一张 GPU 的显卡核心频率, 人为制造"多卡性能不均":
+  ```bash
+  # 将 GPU 1 的频率锁在最低档(如 300MHz), 测试跨卡 All-Reduce 的长尾延迟
+  sudo nvidia-smi -i 1 -lgc 300,300
+  ```
+* 硬件级掉卡模拟:
+  使用 DCGM 的故障注入模式或在系统级使能 PCIe 重置(`nvidia-smi --gpu-reset`), 测试服务在显卡硬件掉线时的处理策略.
+
+#### 2. LLMFI (Large Language Model Fault Injector)
+
+* 定位: 学术界与前沿开源社区专门针对 LLM 推理运行时(Runtime) 开发的故障注入框架.
+* 核心能力:
+  * 支持在推理的 Prefill 阶段 或 Decode 阶段, 动态向 PyTorch 的激活值(Activation)、权重(Weights)甚至 KV Cache 张量中注入位翻转(Bit-flip)或扰动.
+  * 适用场景: 测试模型出现数值异常(NaN / Inf)或者 Logits 畸变时, 服务框架与采样器的自愈或防御行为.
+
+---
+
+### 四、应用层载荷与"KV Cache 风暴"测试
+
+针对"排队打满(429)"、"KV Cache 耗尽抢占(Preemption)", 工具主要是定制化的高性能压测框架:
+
+#### 1. vLLM 官方基准套件扩展(`vllm.benchmarks.benchmark_serving`)
+
+vLLM 源码内置的压测工具本身就是优秀的异常构造器:
+* 通过传入极端参数构造 KV Cache 显存风暴:
+  ```bash
+  # 瞬间以高并发打入极长 Prompt, 直接击穿预分配的 KV 内存池
+  python3 -m vllm.entrypoints.openai.api_server ... &
+
+  python3 -m vllm.benchmarks.benchmark_serving \
+      --dataset-name random \
+      --random-input-len 8000 \
+      --random-output-len 2048 \
+      --request-rate 50
+  ```
+* 通过该套件能极其稳定地复现调度器的换入/换出(Swap)、重算(Recompute)与请求丢弃.
+
+#### 2. Locust / k6(搭配 SSE 扩展)
+
+* 普通的压测工具只看 HTTP 状态码, 无法感知生成一半断开.
+* 使用 `locust-plugins` 或编写自定义的 Python `httpx` / Node.js 脚本:
+  * 编写"恶意客户端"逻辑: 并发 500 个请求, 但每个请求只要收到 3 个 Token 就调用 `close()`, 专门压测 vLLM 处理 `asyncio.CancelledError` 的垃圾回收与显存释放稳定性.
+
+---
+
+### 建议的企业级实施拓扑(落地参考)
+
+如果你要在 CI/CD 或预发环境落地一套自动化测试方案, 最具性价比的架构组合为:
+
+```text
+[ 自动化测试套件 (Pytest + Locust) ]
+               |
+               v (HTTP / SSE)
+   [ Toxiproxy (网络层注入: 丢包/延时/切断) ]
+               |
+               v
+   [ vLLM 推理实例集群 (部署于 K8s / 物理机) ]
+               ^
+               | (底层注入: PodKill / Process Hang / 锁频)
+[ Chaos Mesh / ChaosBlade / nvidia-smi 脚本 ]
+```
+
+1. 协议层与网络层 交给 Toxiproxy: 覆盖"吐字卡死、中途断流、慢客户端"；
+2. 进程与硬件层 交给 ChaosBlade / Chaos Mesh: 覆盖"TP Worker 暴毙、NCCL 挂起、GPU 掉队"；
+3. 调度与算法层 交给 Locust / vLLM Benchmark: 覆盖"长文本压榨、KV Cache 抢占溢出、429 拥塞".
+
+--------------------------------------------------------------------------------------------------
+
+Q: 假设你是一位精通 LLM 和 vllm 推理框架的高级研究人员, 现在我使用 vllm 部署了模型推理服务, 详细过程如下:
+```bash
+docker run -ti --rm \
+--entrypoint /usr/bin/env \
+--security-opt seccomp=unconfined \
+--gpus '"device=0"' \
+-v /data/model:/model \
+-p 0.0.0.0:8090:8000 \
+--name vllm-server \
+vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 bash
+
+export VLLM_LOGGING_LEVEL=DEBUG
+export VLLM_DEBUG_LOG_API_SERVER_RESPONSE=TRUE
+export TORCH_SHOW_CPP_STACKTRACES=1
+
+vllm serve \
+/model/Qwen2.5-7B-Instruct \
+--served-model-name Qwen2.5-7B-Instruct \
+--trust-remote-code \
+--use-tqdm-on-load \
+--host 0.0.0.0 \
+--port 8000 \
+--api-key my_secret_token_123 my_secret_token_456 \
+--enable-log-requests \
+--enable-log-outputs \
+--no-disable-uvicorn-access-log \
+--uvicorn-log-level debug \
+--aggregate-engine-logging \
+--enable-logging-iteration-details \
+--log-error-stack \
+--cudagraph-metrics \
+--kv-cache-metrics \
+--enable-mfu-metrics \
+--enable-log-deltas \
+--enable-prompt-tokens-details \
+--enable-tokenizer-info-endpoint \
+--enable-server-load-tracking \
+--enable-force-include-usage \
+--shutdown-timeout 30 \
+--gpu-memory-utilization 0.95 \
+--max-model-len 8192 \
+--enable-prefix-caching
+
+```
+现在我想主动触发服务端的错误, 让客户端连接到这个服务时, 客户端会收到 http 状态码大于等于 500 的异常, 请问我应该如何操作, 客户端应该怎么写, 服务端有没有需要修改的地方? 请列出详细的操作步骤.
+
+在 vLLM 和 FastAPI 架构中, 客户端故意触发 HTTP 状态码 $\ge 500$(如 500 Internal Server Error 或 503 Service Unavailable) 的关键在于: 绕过 FastAPI 和 Pydantic 的入参校验(否则会返回 400/422), 将非法或引发底层异常的负载送入推理引擎(AsyncEngine/Model Runner), 或者使后台引擎崩溃.
+
+针对你的部署配置(已开启 `DEBUG` 日志、`TORCH_SHOW_CPP_STACKTRACES=1`、映射端口为宿主机 `8090`、模型为纯文本 `Qwen2.5-7B-Instruct`), 以下为你提供三种不同层级的操作方案(从无需改动服务端到混沌工程以及精确 Mock 注入).
+
+---
+
+### 方案一: 纯客户端请求触发(服务端无需任何修改, 推荐)
+
+该方案利用 vLLM 内部模块的未捕获异常机制, 通过构造特定请求, 绕过外层校验并在服务端引发 HTTP 500.
+
+#### 触发方式 1: 向纯文本模型注入多模态结构(最稳定)
+
+* 原理: `Qwen2.5-7B-Instruct` 是纯文本模型, 未初始化 Vision 相关 Processor. 当客户端按照 OpenAI 标准协议传递包含 `image_url` 的混合消息时, Pydantic 校验能顺利通过, 但在进入 Prompt 组装与特征提取阶段时, 后台 `asyncio.TaskGroup` 或处理器会抛出未处理的异常, 直接向上抛出 `HTTP 500 Internal Server Error`.
+* 客户端代码 (Python):
+
+```python
+import requests
+
+url = "http://localhost:8090/v1/chat/completions"
+headers = {
+    "Authorization": "Bearer my_secret_token_123",
+    "Content-Type": "application/json"
+}
+payload = {
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "描述这张图片"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "data:image/jpeg;base64,invalid_base64_payload=="
+                    }
+                }
+            ]
+        }
+    ]
+}
+
+response = requests.post(url, headers=headers, json=payload)
+print(f"Status Code: {response.status_code}")  # 预期输出 >= 500 (通常为 500)
+print(f"Response: {response.text}")
+```
+
+* 对应 cURL:
+
+```bash
+curl -i -X POST http://localhost:8090/v1/chat/completions \
+-H "Authorization: Bearer my_secret_token_123" \
+-H "Content-Type: application/json" \
+-d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "hi"
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "data:image/jpeg;base64,abc"
+                    }
+                }
+            ]
+        }
+    ]
+}'
+
+```
+
+---
+
+#### 触发方式 2: 使用不支持的正则断言触发结构化解码异常
+
+* 原理: vLLM 支持 `guided_regex`(结构化引导解码), 使用 `outlines` 或 `xgrammar` 编译正则有限状态机. 如果传入一个合法字符串、但在正则引擎中不被支持的高级语法(如回顾后发断言 `(?<=...)` 或 `(?<!...)`), FSM 编译器会抛出 `NotImplementedError` 或 `Unsupported` 异常, 该异常在构建 LogitsProcessor 时直接导致请求以 500 失败.
+* 客户端代码 (Python):
+
+```python
+import requests
+
+url = "http://localhost:8090/v1/chat/completions"
+headers = {
+    "Authorization": "Bearer my_secret_token_123",
+    "Content-Type": "application/json"
+}
+payload = {
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [{"role": "user", "content": "1+1="}],
+    # 传入 FSM 正则编译器不支持的前后查找断言
+    "guided_regex": "(?<=test)[0-9]+"
+}
+
+response = requests.post(url, headers=headers, json=payload)
+print(f"Status Code: {response.status_code}")
+print(f"Response: {response.text}")
+```
+
+---
+
+#### 触发方式 3: 极端并发/超大采样触发显存 OOM
+
+* 原理: 你的启动参数配置了 `--gpu-memory-utilization 0.95`, 意味着 GPU 95% 的显存被静态分配给权重和 KV-Cache, 给 PyTorch 运行时算子动态分配预留的 Workspace 显存不足 5%. 通过单次请求要求极大的生成分支(例如 `n=64`), 会导致显存耗尽抛出 `torch.cuda.OutOfMemoryError`, 直接产生 500 异常.
+* 客户端代码 (Python):
+
+```python
+import requests
+
+url = "http://localhost:8000/v1/chat/completions"
+headers = {
+    "Authorization": "Bearer my_secret_token_123",
+    "Content-Type": "application/json"
+}
+payload = {
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [{"role": "user", "content": "写一篇 5000 字的小说" * 10}],
+    "max_tokens": 4096,
+    "n": 64  # 一次性生成 64 条分支序列, 极易爆掉剩余显存
+}
+
+response = requests.post(url, headers=headers, json=payload)
+print(f"Status Code: {response.status_code}")
+print(f"Response: {response.text}")
+```
+
+---
+
+### 方案二: 混沌工程与进程故障注入(服务端无需改代码, 100% 触发 500)
+
+在生产高可用测试中, 最标准的做法是模拟"前端网关仍存活, 但后台推理引擎已崩溃(AsyncEngineDeadError)".
+
+#### 操作步骤:
+
+1. 服务端保持正常运行(如你当前的容器状态).
+2. 在宿主机另开一个终端, 向容器内的推理核心子进程发送 `SIGKILL` 信号:
+
+```bash
+# 杀死后台 EngineCore 或 Worker 进程, 但保留 Uvicorn 主服务
+docker exec -it vllm-server pkill -9 -f "EngineCore"
+```
+(注: 如果当前 vLLM 版本采用 Ray 或 Multiprocessing Worker, 可执行 `docker exec -it vllm-server pkill -9 -f "vllm.worker"`)
+
+3. 客户端立即发起标准请求:
+
+```python
+import requests
+
+url = "http://localhost:8090/v1/chat/completions"
+headers = {
+    "Authorization": "Bearer my_secret_token_123",
+    "Content-Type": "application/json"
+}
+payload = {
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [{"role": "user", "content": "hello"}]
+}
+
+response = requests.post(url, headers=headers, json=payload)
+print(f"Status Code: {response.status_code}")
+print(f"Body: {response.text}")
+
+```
+
+4. 现象:
+
+- 客户端将立刻收到:
+```json
+HTTP/1.1 500 Internal Server Error
+{"error": {"message": "EngineCore is dead or has errored already.", "type": "internal_error", "code": 500}}
+```
+- 服务端终端会因你配置了 `TORCH_SHOW_CPP_STACKTRACES=1` 和 `DEBUG` 打印完整的进程退出堆栈.
+
+---
+
+### 方案三: 服务端代码拦截/中间件注入(确定性、可编程控制)
+
+如果你希望在 CI/CD 自动化集成测试中稳定复现 500/503, 而不希望真正搞挂 GPU 驱动或破坏服务上下文, 可以在服务端注入一个自定义中间件(Middleware).
+
+#### 服务端修改步骤:
+
+由于你使用 `bash` 交互式进入了容器, 可在启动 `vllm serve` 前, 对 FastAPI 入口进行轻量级 Patch.
+
+1. 找到 API Server 代码路径:
+
+在容器内执行:
+
+```bash
+python3 -c "import vllm.entrypoints.openai.api_server as m; print(m.__file__)"
+# 路径通常位于: /usr/local/lib/python3.12/dist-packages/vllm/entrypoints/openai/api_server.py
+
+$ python3 -c "import vllm.entrypoints.openai.api_server as m; print(m.__file__)"
+/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/openai/api_server.py
+$
+
+```
+
+2. 编辑该文件:
+
+在创建 `app = FastAPI(...)` 之后, 添加如下中间件(支持通过 Header 触发 500 或 503):
+
+```python
+from starlette.responses import JSONResponse
+
+@app.middleware("http")
+async def mock_fault_injection_middleware(request, call_next):
+    # 如果客户端携带了特定的混沌测试 Header, 直接返回 500
+    if request.headers.get("X-Chaos-Fault") == "500":
+        return JSONResponse(
+            status_code=500,
+            content={"error": {"message": "Injected 500 Internal Server Error", "type": "chaos_test"}}
+        )
+    elif request.headers.get("X-Chaos-Fault") == "503":
+        return JSONResponse(
+            status_code=503,
+            content={"error": {"message": "Service Temporarily Unavailable", "type": "chaos_test"}}
+        )
+    return await call_next(request)
+
+```
+
+3. 启动 vllm serve(使用你原有的启动参数).
+
+4. 客户端请求:
+
+客户端只需在 Header 中附带该标记即可自主控制触发:
+
+```bash
+curl -i -X POST http://localhost:8090/v1/chat/completions \
+-H "Authorization: Bearer my_secret_token_123" \
+-H "Content-Type: application/json" \
+-H "X-Chaos-Fault: 500" \
+-d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [
+        {
+            "role": "user",
+            "content": "hi"
+        }
+    ]
+}'
+
+```
+
+---
+
+### 总结与选型建议
+
+| 方案                      | 服务端是否需修改   | 稳定性/可控性            | 影响范围                               | 适用场景                                |
+| :------------------------ | :----------------- | :----------------------- | :------------------------------------- | :-------------------------------------- |
+| 方案一(多模态/正则注入)   | 完全不需要         | 极高(利用内部未捕获逻辑) | 仅影响当前请求                         | 黑盒测试、客户端单测重试机制            |
+| 方案二(杀掉 Engine 进程)  | 仅需执行杀进程命令 | 100% 稳定出 500          | 影响该容器后续所有请求, 需重启容器恢复 | 容灾演练、熔断降级(Circuit Breaker)测试 |
+| 方案三(注入 Fault 中间件) | 需要修改一行文件   | 100% 精准可控            | 按 Header 隔离, 不影响其他正常流量     | CI/CD 自动化流水线、长期性能压测验证    |
+
+如果你手头服务正在跑, 首选「方案一的方式 1」或「方案二」, 无需改动任何代码与容器配置, 几秒钟内即可在客户端捕获标准的 HTTP 500 异常.
+
+--------------------------------------------------------------------------------------------------
+
+Q: 使用方案三: 服务端代码拦截/中间件注入, 原始的 api_server.py 文件如下:
+
+```python
+# /usr/local/lib/python3.12/dist-packages/vllm/entrypoints/openai/api_server.py
+```
+请输出完整的使用方案3修改之后的文件
+
+以下是针对你的源码进行修改后的完整 `api_server.py` 文件.
+
+### 修改说明
+
+1. 导入模块: 在文件头部导入了 `Request` 与 `JSONResponse`.
+2. 故障注入中间件: 在 `build_app` 函数中注入了 `@app.middleware("http")` 混沌故障拦截器 `chaos_fault_injection_middleware`.
+3. 触发逻辑:
+   * 支持通过 HTTP Header `X-Chaos-Fault: <code|action>` 或 URL Query 参数 `?chaos_fault=<code|action>` 触发.
+   * 支持指定任意状态码(如 `500`、`502`、`503`、`504`), 直接返回符合 OpenAI 规范的 JSON 错误响应.
+   * 支持传 `raise` 或 `crash`, 会在服务端主动抛出一个未捕获的 `RuntimeError`, 以此触发服务端的异常栈捕获机制.
+   * 不带该 Header/参数的正常请求完全不受影响, 可安心用于测试和生产对比.
+
+---
+
+### 完整代码 (`api_server.py`)
+
+```python
+```
+
+---
+
+### 部署与客户端测试说明
+
+#### 1. 替换容器内的文件
+
+因为你在容器中是 `bash` 交互模式, 可以先查看文件绝对路径并进行覆盖:
+
+```bash
+# 在容器内查看文件路径
+FILE_PATH=$(python3 -c "import vllm.entrypoints.openai.api_server as m; print(m.__file__)")
+echo $FILE_PATH
+
+# 直接覆盖写入上述内容
+cat << 'EOF' > $FILE_PATH
+<粘贴上面的完整代码>
+EOF
+```
+然后正常执行你原有的 `vllm serve ...` 命令启动服务.
+
+#### 2. 客户端调用方式
+
+##### (1) cURL 测试
+
+```bash
+# 测试返回 HTTP 500
+curl -i -X POST http://localhost:8090/v1/chat/completions \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -H "Content-Type: application/json" \
+  -H "X-Chaos-Fault: 500" \
+  -d '{"model": "Qwen2.5-7B-Instruct", "messages": [{"role": "user", "content": "hello"}]}'
+
+# 测试返回 HTTP 503 (模拟服务不可用)
+curl -i -X POST http://localhost:8090/v1/chat/completions \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -H "Content-Type: application/json" \
+  -H "X-Chaos-Fault: 503" \
+  -d '{"model": "Qwen2.5-7B-Instruct", "messages": [{"role": "user", "content": "hello"}]}'
+
+# 测试抛出未捕获异常 (观察服务端终端栈回溯)
+curl -i -X POST http://localhost:8090/v1/chat/completions \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -H "Content-Type: application/json" \
+  -H "X-Chaos-Fault: raise" \
+  -d '{"model": "Qwen2.5-7B-Instruct", "messages": [{"role": "user", "content": "hello"}]}'
+```
+
+##### (2) Python 客户端测试
+
+```python
+import requests
+
+url = "http://localhost:8090/v1/chat/completions"
+
+# 1. 触发 500 异常
+headers = {
+    "Authorization": "Bearer my_secret_token_123",
+    "Content-Type": "application/json",
+    "X-Chaos-Fault": "500",  # 设置为你想要返回的状态码 >= 500
+}
+
+payload = {
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [{"role": "user", "content": "hello"}],
+}
+
+res = requests.post(url, headers=headers, json=payload)
+print(f"Status Code: {res.status_code}")  # 500
+print(f"Response Body: {res.text}")
+
+# 2. 正常请求对比 (去掉 Header 正常输出模型推理)
+normal_headers = {
+    "Authorization": "Bearer my_secret_token_123",
+    "Content-Type": "application/json",
+}
+res_normal = requests.post(url, headers=normal_headers, json=payload)
+print(f"Normal Request Status: {res_normal.status_code}")  # 200
+```
+
+--------------------------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------------------------
