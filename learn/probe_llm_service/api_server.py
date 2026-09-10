@@ -297,9 +297,13 @@ def build_app(
     # ---------------------------------------------------------
     @app.middleware("http")
     async def chaos_fault_injection_middleware(request: Request, call_next):
-        fault = request.headers.get("X-Chaos-Fault") or request.query_params.get("chaos_fault")
+        fault = request.headers.get("X-Chaos-Fault") or request.query_params.get(
+            "chaos_fault"
+        )
         if fault:
-            logger.warning("Active chaos fault injection triggered with marker: %s", fault)
+            logger.warning(
+                "Active chaos fault injection triggered with marker: %s", fault
+            )
             # 1. 支持指定 HTTP >= 500 状态码 (例如 500, 502, 503, 504)
             if fault.isdigit() and int(fault) >= 500:
                 status_code = int(fault)
@@ -316,9 +320,12 @@ def build_app(
                 )
             # 2. 支持模拟抛出未捕获服务端严重异常, 检验底层 exception_handler 机制
             elif fault.lower() in ("exception", "crash", "raise"):
-                raise RuntimeError("Injected Fault: Simulated unhandled server exception for chaos test.")
+                raise RuntimeError(
+                    "Injected Fault: Simulated unhandled server exception for chaos test."
+                )
 
         return await call_next(request)
+
     # ---------------------------------------------------------
 
     for middleware in args.middleware:

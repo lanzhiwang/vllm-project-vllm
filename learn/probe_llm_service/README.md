@@ -1830,6 +1830,223 @@ print(f"Normal Request Status: {res_normal.status_code}")  # 200
 
 --------------------------------------------------------------------------------------------------
 
+Q: 使用 --middleware 参数实现
+
+完全可以使用 `--middleware` 参数来实现, 而且这是 vLLM 官方推荐的、最优雅的无侵入式解耦方案.
+
+### 为什么可以无缝替换?
+
+查看你所贴出的 `vllm/entrypoints/openai/api_server.py` 源码中的解析逻辑:
+
+```python
+for middleware in args.middleware:
+    module_path, object_name = middleware.rsplit(".", 1)
+    imported = getattr(importlib.import_module(module_path), object_name)
+    if inspect.isclass(imported):
+        app.add_middleware(imported)
+    elif inspect.iscoroutinefunction(imported):
+        app.middleware("http")(imported)
+    else:
+        raise ValueError(...)
+```
+
+从源码可以看到:
+1. `--middleware` 参数接收一个形如 `<module_path>.<object_name>` 的字符串, 并通过 `importlib.import_module` 动态导入.
+2. 如果传入的是一个协程函数（`inspect.iscoroutinefunction`, 即 `async def`）, vLLM 会直接执行 `app.middleware("http")(imported)`. 这与你在源码中写的 `@app.middleware("http")` 底层行为完全等价.
+3. 如果传入的是一个类, vLLM 会通过 `app.add_middleware(imported)` 加载.
+
+---
+
+### 详细操作步骤
+
+#### 第一步: 将中间件代码抽取为独立的 Python 模块
+
+在宿主机上（例如 `/data/middlewares/chaos_middleware.py`）创建一个独立的文件, 将中间件逻辑剥离出来:
+
+```bash
+mkdir -p /data/middlewares
+cat << 'EOF' > /data/middlewares/chaos_middleware.py
+import logging
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+logger = logging.getLogger("vllm.entrypoints.openai.api_server")
+
+async def chaos_fault_injection_middleware(request: Request, call_next):
+    """
+    Chaos Fault Injection Middleware:
+    主动拦截请求并根据 X-Chaos-Fault 响应指定的 >=500 状态码或抛出异常
+    """
+    fault = request.headers.get("X-Chaos-Fault") or request.query_params.get("chaos_fault")
+    if fault:
+        logger.warning("Active chaos fault injection triggered with marker: %s", fault)
+
+        # 1. 指定 HTTP >= 500 状态码 (例如 500, 502, 503, 504)
+        if fault.isdigit() and int(fault) >= 500:
+            status_code = int(fault)
+            return JSONResponse(
+                status_code=status_code,
+                content={
+                    "error": {
+                        "message": f"Injected Fault: Service returned HTTP {status_code} intentionally.",
+                        "type": "chaos_fault_injection",
+                        "param": None,
+                        "code": status_code,
+                    }
+                },
+            )
+        # 2. 模拟抛出未捕获服务端严重异常, 验证异常处理机制
+        elif fault.lower() in ("exception", "crash", "raise"):
+            raise RuntimeError(
+                "Injected Fault: Simulated unhandled server exception for chaos test."
+            )
+
+    return await call_next(request)
+EOF
+```
+
+---
+
+#### 第二步: 调整 Docker 容器挂载与 Python 路径
+
+通过挂载将宿主机的 `/data/middlewares` 映射到容器内部（例如 `/workspace/middlewares`）, 并通过设置环境变量 `PYTHONPATH` 确保 Python 能够找到该模块.
+
+在启动 Docker 容器时挂载并导出环境:
+
+```bash
+docker run -ti --rm \
+  --entrypoint /usr/bin/env \
+  --security-opt seccomp=unconfined \
+  --gpus '"device=0"' \
+  -v /data/model:/model \
+  -v /data/middlewares:/workspace/middlewares \
+  -p 0.0.0.0:8090:8000 \
+  --name vllm-server \
+  vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 bash
+```
+
+进入容器后, 在终端执行:
+
+```bash
+# 将模块所在的父目录加入 PYTHONPATH, 确保能够直接 import middlewares.xxx
+export PYTHONPATH="/workspace:${PYTHONPATH}"
+
+export VLLM_LOGGING_LEVEL=DEBUG
+export VLLM_DEBUG_LOG_API_SERVER_RESPONSE=TRUE
+export TORCH_SHOW_CPP_STACKTRACES=1
+```
+
+---
+
+#### 第三步: 启动 `vllm serve` 并传入 `--middleware` 参数
+
+在原有命令中追加 `--middleware middlewares.chaos_middleware.chaos_fault_injection_middleware` 即可:
+
+```bash
+vllm serve \
+  /model/Qwen2.5-7B-Instruct \
+  --served-model-name Qwen2.5-7B-Instruct \
+  --trust-remote-code \
+  --use-tqdm-on-load \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --api-key my_secret_token_123 my_secret_token_456 \
+  --enable-log-requests \
+  --enable-log-outputs \
+  --no-disable-uvicorn-access-log \
+  --uvicorn-log-level debug \
+  --aggregate-engine-logging \
+  --enable-logging-iteration-details \
+  --log-error-stack \
+  --cudagraph-metrics \
+  --kv-cache-metrics \
+  --enable-mfu-metrics \
+  --enable-log-deltas \
+  --enable-prompt-tokens-details \
+  --enable-tokenizer-info-endpoint \
+  --enable-server-load-tracking \
+  --enable-force-include-usage \
+  --shutdown-timeout 30 \
+  --gpu-memory-utilization 0.95 \
+  --max-model-len 8192 \
+  --enable-prefix-caching \
+  --middleware middlewares.chaos_middleware.chaos_fault_injection_middleware
+```
+
+(注: 如果你使用的是类形式的中间件, 这里传入 `middlewares.chaos_middleware.ChaosFaultInjectionMiddleware` 同样有效)
+
+---
+
+#### 第四步: 验证中间件生效
+
+服务启动完毕后, 在宿主机或测试机上验证:
+
+##### 1. 正常请求验证
+```bash
+curl -i -X POST http://127.0.0.1:8090/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [{"role": "user", "content": "ping"}]
+  }'
+```
+> 应正常返回 `HTTP/1.1 200 OK`.
+
+##### 2. 模拟 503 Service Unavailable 拦截
+```bash
+curl -i -X POST http://127.0.0.1:8090/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -H "X-Chaos-Fault: 503" \
+  -d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [{"role": "user", "content": "ping"}]
+  }'
+```
+> 应立即返回 `HTTP/1.1 503 Service Unavailable` 及注入的 JSON 错误信息, 请求不会下发给 vLLM 引擎.
+
+##### 3. 模拟抛出未捕获异常
+```bash
+curl -i -X POST "http://127.0.0.1:8090/v1/chat/completions?chaos_fault=crash" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [{"role": "user", "content": "ping"}]
+  }'
+```
+> 应触发未捕获异常并交由 FastAPI 底层全局 exception handler 捕获（返回 500）.
+
+---
+
+### 架构细节与注意事项 (Best Practices)
+
+1. 中间件执行顺序（洋葱模型）:
+   * FastAPI / Starlette 的中间件是后注册的包裹在最外层.
+   * 在 `build_app` 中, `AuthenticationMiddleware` 先注册, `args.middleware` 后注册.
+   * 结果: 传入的 `--middleware` 会在 API Key 鉴权之前最先触达请求. 这意味着即使请求未携带 Bearer Token, 只要触发了 `X-Chaos-Fault`, 该中间件就会提前拦截报错. 这非常符合混沌工程（Chaos Testing）的预期.
+2. 多中间件级联:
+   * CLI 参数 `--middleware` 的 action 是 `append`, 支持多次指定. 例如:
+     ```bash
+     --middleware middlewares.trace.TraceMiddleware \
+     --middleware middlewares.chaos_middleware.chaos_fault_injection_middleware
+     ```
+3. 基于类的标准实现（可选替代方案）:
+   如果你希望代码更具规范性, 也可以使用 Starlette 的 `BaseHTTPMiddleware` 类:
+   ```python
+   from starlette.middleware.base import BaseHTTPMiddleware
+   from fastapi import Request
+   from fastapi.responses import JSONResponse
+
+   class ChaosFaultInjectionMiddleware(BaseHTTPMiddleware):
+       async def dispatch(self, request: Request, call_next):
+           # 逻辑与函数完全一致
+           ...
+           return await call_next(request)
+   ```
+   vLLM 的 `inspect.isclass` 分支会自动调用 `app.add_middleware(imported)` 进行加载. 两种方式在当前场景下功能完全一致.
+
 --------------------------------------------------------------------------------------------------
 
 --------------------------------------------------------------------------------------------------
