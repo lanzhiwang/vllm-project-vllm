@@ -4,7 +4,8 @@ FROM vllm/vllm-openai:v0.22.0-cu129-ubuntu2404
 USER root
 
 # 安装代理所需异步网络库
-RUN pip install --no-cache-dir --ignore-installed blinker quart
+# RUN pip install --no-cache-dir --ignore-installed blinker quart
+RUN pip install --no-cache-dir --progress-bar off --ignore-installed blinker quart msgpack
 
 WORKDIR /app
 

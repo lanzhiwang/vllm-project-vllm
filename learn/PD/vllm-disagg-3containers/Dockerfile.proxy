@@ -1,0 +1,10 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# 安装异步服务所需网络依赖
+RUN pip install --no-cache-dir quart aiohttp
+
+COPY disagg_prefill_proxy_server.py /app/
+
+ENTRYPOINT ["python3", "/app/disagg_prefill_proxy_server.py"]

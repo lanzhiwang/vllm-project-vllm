@@ -81,21 +81,37 @@ CUDA_VISIBLE_DEVICES=0 vllm serve "$MODEL_NAME" \
     --trust-remote-code \
     --kv-transfer-config \
     '{
-        "kv_connector": "P2pNcclConnector",  # 使用基于 NCCL 点对点 (P2P NVLink/PCIe) 的高速传输通道
-        "kv_role": "kv_producer",            # 角色: 生产者 (负责 prompt 前向计算并推送 KV Cache)
-        "kv_rank": 0,                        # 通信拓扑中的编号 (Prefill 设为 0)
-        "kv_parallel_size": 2,               # P2P 通信组包含的节点总数 (Producer + Consumer 共 2 个)
-        "kv_buffer_size": "1e9",             # 发送端暂存缓冲区大小 (1e9 字节 ≈ 1GB 显存)
-        "kv_port": "14579",                  # Prefill 节点监听的 NCCL 底层套接字通信端口
+        "kv_connector": "P2pNcclConnector",
+        "kv_role": "kv_producer",
+        "kv_rank": 0,
+        "kv_parallel_size": 2,
+        "kv_buffer_size": "1e9",
+        "kv_port": "14579",
         "kv_connector_extra_config": {
             "proxy_ip": "'"$VLLM_HOST_IP"'",
             "proxy_port": "30001",
             "http_ip": "'"$VLLM_HOST_IP"'",
             "http_port": "8100",
-            "send_type": "PUT_ASYNC"         # 异步推送模式 (Prefill 计算完毕后非阻塞发送给 Decode 节点)
+            "send_type": "PUT_ASYNC"
         }
     }' &
 # 末尾的 & 表示置于后台运行, 主脚本继续向下执行
+
+# {
+#         "kv_connector": "P2pNcclConnector",  # 使用基于 NCCL 点对点 (P2P NVLink/PCIe) 的高速传输通道
+#         "kv_role": "kv_producer",            # 角色: 生产者 (负责 prompt 前向计算并推送 KV Cache)
+#         "kv_rank": 0,                        # 通信拓扑中的编号 (Prefill 设为 0)
+#         "kv_parallel_size": 2,               # P2P 通信组包含的节点总数 (Producer + Consumer 共 2 个)
+#         "kv_buffer_size": "1e9",             # 发送端暂存缓冲区大小 (1e9 字节 ≈ 1GB 显存)
+#         "kv_port": "14579",                  # Prefill 节点监听的 NCCL 底层套接字通信端口
+#         "kv_connector_extra_config": {
+#             "proxy_ip": "'"$VLLM_HOST_IP"'",
+#             "proxy_port": "30001",
+#             "http_ip": "'"$VLLM_HOST_IP"'",
+#             "http_port": "8100",
+#             "send_type": "PUT_ASYNC"         # 异步推送模式 (Prefill 计算完毕后非阻塞发送给 Decode 节点)
+#         }
+#     }
 
 # ------------------------------------------------------------------------------
 # 2. 启动 Decode 阶段实例 (KV Consumer / 键值对消费者)
@@ -110,12 +126,12 @@ CUDA_VISIBLE_DEVICES=1 vllm serve "$MODEL_NAME" \
     --trust-remote-code \
     --kv-transfer-config \
     '{
-        "kv_connector": "P2pNcclConnector",  # 协议必须与 Producer 严格匹配
-        "kv_role": "kv_consumer",            # 角色: 消费者 (接收 Prefill 传来的 KV Cache, 执行自回归解码)
-        "kv_rank": 1,                        # 通信拓扑中的编号 (Decode 设为 1)
-        "kv_parallel_size": 2,               # 通信组节点总数
-        "kv_buffer_size": "1e10",            # 接收端缓冲区 (1e10 字节 ≈ 10GB 显存, 需容纳多并发请求的 KV 缓存)
-        "kv_port": "14580",                  # Decode 节点监听的 NCCL 底层套接字通信端口
+        "kv_connector": "P2pNcclConnector",
+        "kv_role": "kv_consumer",
+        "kv_rank": 1,
+        "kv_parallel_size": 2,
+        "kv_buffer_size": "1e10",
+        "kv_port": "14580",
         "kv_connector_extra_config": {
             "proxy_ip": "'"$VLLM_HOST_IP"'",
             "proxy_port": "30001",
@@ -124,6 +140,22 @@ CUDA_VISIBLE_DEVICES=1 vllm serve "$MODEL_NAME" \
             "send_type": "PUT_ASYNC"
         }
     }' &
+
+# {
+#         "kv_connector": "P2pNcclConnector",  # 协议必须与 Producer 严格匹配
+#         "kv_role": "kv_consumer",            # 角色: 消费者 (接收 Prefill 传来的 KV Cache, 执行自回归解码)
+#         "kv_rank": 1,                        # 通信拓扑中的编号 (Decode 设为 1)
+#         "kv_parallel_size": 2,               # 通信组节点总数
+#         "kv_buffer_size": "1e10",            # 接收端缓冲区 (1e10 字节 ≈ 10GB 显存, 需容纳多并发请求的 KV 缓存)
+#         "kv_port": "14580",                  # Decode 节点监听的 NCCL 底层套接字通信端口
+#         "kv_connector_extra_config": {
+#             "proxy_ip": "'"$VLLM_HOST_IP"'",
+#             "proxy_port": "30001",
+#             "http_ip": "'"$VLLM_HOST_IP"'",
+#             "http_port": "8200",
+#             "send_type": "PUT_ASYNC"
+#         }
+#     }
 
 # ------------------------------------------------------------------------------
 # 3. 阻塞等待 Prefill 和 Decode 两个后端实例就绪
