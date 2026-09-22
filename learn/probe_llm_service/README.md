@@ -1,122 +1,6 @@
 
 --------------------------------------------------------------------------------------------------
 
-```bash
-
-select * from token_audit_logs WHERE uuid in ('35ff460c-2142-48cd-810b-5ab46958eaf2', '4a2ba43a-7d3d-419d-8bd1-d90e40cc713f');
-
-select * from token_audit_logs where original_auth = 'kn49enthcjzklckavdwhhleo' and authorization = 'd0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o';
-
-SELECT
-    `id`,
-    `uuid`,
-    `request_id`,
-    `llm_model_final`,
-    `status_code`,
-    `input_token`,
-    `output_token`,
-    `cached_token`,
-    `total_token`,
-    `cost_total`,
-    `created_at`
-FROM `token_audit_logs`
-WHERE `original_auth` = 'kn49enthcjzklckavdwhhleo'
-  AND `authorization` = 'd0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o'
-  AND `created_at` >= '2026-08-26 17:00:00.000'
-  AND `created_at` <  '2026-08-26 18:00:00.000'
-ORDER BY `created_at` DESC;
-
-
-
-SELECT
-    DATE_FORMAT(`created_at`, '%Y-%m-%d %H:00:00') AS `stat_hour`,
-    COUNT(1)               AS `request_count`,      -- 当前小时请求次数
-    SUM(`input_token`)     AS `total_input_token`,  -- 输入Token总数
-    SUM(`output_token`)    AS `total_output_token`, -- 输出Token总数
-    SUM(`cached_token`)    AS `total_cached_token`, -- 命中缓存Token总数
-    SUM(`total_token`)     AS `sum_total_tokens`    -- 整体Token总数
-FROM `token_audit_logs`
-WHERE `original_auth` = 'kn49enthcjzklckavdwhhleo'
-  AND `authorization` = 'd0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o'
-  AND `created_at` >= '2026-08-26 17:00:00.000'
-  AND `created_at` <  '2026-08-26 18:00:00.000'
-GROUP BY `stat_hour`
-ORDER BY `stat_hour` ASC;
-
-
-WITH RECURSIVE `hours_generator` AS (
-    -- 1. 生成当天 00:00:00 到 23:00:00 的 24 个时间点
-    SELECT
-        '2026-08-26 00:00:00' AS `stat_hour_str`,
-        0 AS `h`
-    UNION ALL
-    SELECT
-        DATE_FORMAT(DATE_ADD('2026-08-26 00:00:00', INTERVAL `h` + 1 HOUR), '%Y-%m-%d %H:00:00'),
-        `h` + 1
-    FROM `hours_generator`
-    WHERE `h` < 23
-),
-`daily_logs` AS (
-    -- 2. 统计当天有日志的小时数据
-    SELECT
-        DATE_FORMAT(`created_at`, '%Y-%m-%d %H:00:00') AS `stat_hour_str`,
-        COUNT(1)            AS `request_count`,
-        SUM(`input_token`)  AS `total_input_token`,
-        SUM(`output_token`) AS `total_output_token`,
-        SUM(`cached_token`) AS `total_cached_token`,
-        SUM(`total_token`)  AS `sum_total_tokens`
-    FROM `token_audit_logs`
-    WHERE `original_auth` = 'kn49enthcjzklckavdwhhleo'
-      AND `authorization` = 'd0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o'
-      AND `created_at` >= '2026-08-26 00:00:00.000'
-      AND `created_at` <  '2026-08-27 00:00:00.000'
-    GROUP BY `stat_hour_str`
-)
--- 3. LEFT JOIN 补齐没有调用记录的小时, 用 0 填充
-SELECT
-    h.`stat_hour_str` AS `stat_hour`,
-    COALESCE(l.`request_count`, 0)      AS `request_count`,
-    COALESCE(l.`total_input_token`, 0)  AS `total_input_token`,
-    COALESCE(l.`total_output_token`, 0) AS `total_output_token`,
-    COALESCE(l.`total_cached_token`, 0) AS `total_cached_token`,
-    COALESCE(l.`sum_total_tokens`, 0)   AS `sum_total_tokens`
-FROM `hours_generator` h
-LEFT JOIN `daily_logs` l ON h.`stat_hour_str` = l.`stat_hour_str`
-ORDER BY h.`stat_hour_str` ASC;
-
-
-
-curl --request POST \
-  --url https://api.gpugeek.com/v1/chat/completions \
-  --header 'Authorization: Bearer d0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o' \
-  --header 'Content-Type: application/json' \
-  --data '{
-    "model": "Vendor3/DeepSeek-V4-Flash",
-    "messages": [
-      {
-        "role": "user",
-        "content": "你好, 请介绍一下自己"
-      }
-    ]
-  }'
-
-curl --request POST \
-  --url https://api.gpugeek.com/v1/chat/completions \
-  --header 'Authorization: Bearer d0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o' \
-  --header 'Content-Type: application/json' \
-  --data '{
-    "model": "Vendor3/DeepSeek-V4-Flash",
-    "messages": [
-        {
-            "role": "user",
-            "content": "你好, 请用200字介绍量子计算的基本原理"
-        }
-    ],
-    "stream": true
-}'
-
-```
-
 Q: 假设你是一位精通 LLM 模型推理服务的高级研究人员, 我现在有一个模型推理服务, 我可以使用客户端正常请求它, 如下所示:
 ```bash
 $ curl --request POST \
@@ -132,13 +16,43 @@ $ curl --request POST \
       }
     ]
   }'
-{"id":"cds_682a106f-883e-4821-8bdf-f3f232d50251","object":"chat.completion","created":1787537545,"model":"Vendor3/DeepSeek-V4-Flash","choices":[{"finish_reason":"stop","index":0,"message":{"role":"assistant","content":"你好呀! 很高兴认识你! 😊\n\n我是DeepSeek, 由深度求索公司创造的AI助手. 简单来说, 我是个热心肠的"智能小助手", 随时准备帮你解决各种问题! \n\n关于我的一些特点: \n\n✨ 知识丰富: 我的知识截止到2025年5月, 涵盖各个领域, 从科技、文化到生活常识, 都能聊上几句. \n\n📚 超长记忆: 我有1M的上下文处理能力, 可以一次性处理像《三体》三部曲那么厚的书籍(大概相当于几百万字), 所以长篇文档、复杂对话都难不倒我. \n\n🌐 联网搜索: 如果你需要最新信息, 可以在Web或App端手动开启联网搜索功能, 我就能帮你查找实时资料啦! \n\n📎 文件处理: 我支持上传图片、PDF、Word、Excel、PPT、TXT等文件, 可以从中读取文字信息帮你分析处理. \n\n🗣️ 语音输入: 在App端, 你还可以用语音跟我交流, 更加方便快捷. \n\n💰 完全免费: 最重要的是, 我目前完全免费! 没有任何收费计划, 放心使用. \n\n我会用热情、细腻的方式回答你的问题, 用你使用的语言和你交流. 无论你是想聊天、学习、工作还是娱乐, 我都乐意陪伴! \n\n那么, 今天有什么我可以帮你的吗? 😊","reasoning_content":"好的, 用户让我介绍一下自己. 这是一个非常常见的开场问题, 用户可能是第一次接触我, 想了解我的基本情况和能力范围. 我需要给出一个清晰、全面且友好的自我介绍, 让用户知道我是谁、能做什么、有什么特点, 以及如何使用我. \n\n想到了可以从几个关键方面来组织回复: 我的身份和创造者、核心能力(特别是文本处理和长上下文)、文件支持、联网搜索功能、免费性质、以及知识截止日期. 最后可以加上一个友好的结束语, 表达乐于帮助的态度. 这样结构比较完整, 信息量也足够, 能帮助用户快速建立认知. \n\n就用一个热情的开头, 然后分点说明, 但回复时不用序号, 用自然的段落过渡. 语气要亲切、自信, 让用户感到可靠和愿意交流. "}}],"usage":{"prompt_tokens":9,"completion_tokens":443,"total_tokens":452,"prompt_tokens_details":{"cache_creation":{}}},"metrics":{"input_token_count":9,"output_token_count":443,"predict_time":5.165837146}}
+{
+    "id":"cds_682a106f-883e-4821-8bdf-f3f232d50251",
+    "object":"chat.completion",
+    "created":1787537545,
+    "model":"Vendor3/DeepSeek-V4-Flash",
+    "choices":[
+        {
+            "finish_reason":"stop",
+            "index":0,
+            "message":{
+                "role":"assistant",
+                "content":"你好呀! 很高兴认识你! 今天有什么我可以帮你的吗?",
+                "reasoning_content":"好的, 用户让我介绍一下自己. 语气要亲切、自信, 让用户感到可靠和愿意交流."
+            }
+        }
+    ],
+    "usage":{
+        "prompt_tokens":9,
+        "completion_tokens":443,
+        "total_tokens":452,
+        "prompt_tokens_details":{
+            "cache_creation":{}
+        }
+    },
+    "metrics":{
+        "input_token_count":9,
+        "output_token_count":443,
+        "predict_time":5.165837146
+    }
+}
 ```
-这是正常的请求情况, 我现在想全面了解一下这个模型服务的各种异常或者错误情况, 比如对于这个模型, 首次token的响应时间, 整体请求的超时时间设置多少合适, 以及其他一些异常是的返回情况, 请帮忙写一个python脚本, 多次请求这个模型服务, 并打印详细信息说明上述各种情况
+这是正常的请求情况, 我现在想全面了解一下这个模型服务的各种异常或者错误情况, 比如对于这个模型, 首次 token 的响应时间, 整体请求的超时时间设置多少合适, 以及其他一些异常是的返回情况, 请帮忙写一个 python 脚本, 多次请求这个模型服务, 并打印详细信息说明上述各种情况
 
 在 LLM 推理服务(Inference Serving)的工程实践中, 评估一个 API 服务的质量不仅要看它的吞吐与延迟, 更要全面摸清它的边界条件、容错能力、限流策略和异常返回规范.
 
 从你提供的 `curl` 响应中可以看到几个关键特征:
+
 1. 模型类型: `Vendor3/DeepSeek-V4-Flash` 带有 `reasoning_content`(包含推理思维链).
 2. 生成性能: `predict_time: 5.16s` 生成了 `443 completion_tokens`, Decode 吞吐约为 85.7 tokens/s.
 3. 元数据丰富度: 网关返回了自定义的 `metrics` 字段(包含输入输出 token 统计及纯推理耗时), 这非常适合我们做客户端与服务端耗时的对比分析.
@@ -150,18 +64,22 @@ $ curl --request POST \
 在编写脚本前, 我们先建立一套推理服务的超时基准配置模型:
 
 1. TTFT (Time To First Token / 首 Token 响应时间):
+
    * 构成: `网络握手耗时` + `网关路由与排队耗时` + `Prefill (Prompt 处理) 耗时`.
    * 特性: 受输入上下文长度(Prompt Length)和是否有 Prompt Caching 影响极大. 对于短 Prompt, TTFT 通常在 300ms ~ 1.5s; 若服务正在排队或输入数十万字, TTFT 可能飙升到 10s 以上.
 
 2. TPOT (Time Per Output Token / 单 Token 耗时):
+
    * 构成: Decode 阶段显存带宽密集型计算.
    * 特性: 单并发下通常非常稳定(例如 80~120 tokens/s, 即 8~12ms/token).
 
 3. 超时时间(Timeout)黄金配置法则:
+
    * 连接超时 (`Connect Timeout`): 建议设为 `3s ~ 5s`(TCP 握手和 TLS 协商).
    * 流式 TTFT 超时 (`Read Timeout for First Chunk`): 建议设为 `15s ~ 30s`(应对突发流量排队和 Prefill 计算).
    * 流式 Token 间隔超时 (`Idle/Chunk Timeout`): 流式传输中, 如果连续 `5s` 没有任何新 chunk 到达, 判定为后端 worker 崩溃或网络假死, 主动断开重试.
    * 非流式全量请求超时 (`Non-Streaming Total Timeout`):
+
      $$\text{Timeout} = \text{Max\_TTFT} + \left( \frac{\text{Max\_Output\_Tokens}}{\text{Min\_Decode\_Speed}} \right) \times 1.5$$
 
      例: 最大输出 4096 tokens, 保守速度 50 tokens/s, 则全量超时建议设为: $30s + (4096 / 50) \times 1.5 \approx 150s$.
@@ -177,6 +95,7 @@ $ curl --request POST \
 3. 综合分析与超时配置建议报告
 
 #### 依赖准备
+
 ```bash
 pip install requests
 ```
@@ -262,9 +181,11 @@ Q: 我想验证模型推理服务是否开启了前缀缓存, 请输出完整的
 要 100% 确定推理服务是否开启并命中了前缀缓存, 通常从以下两个维度交叉验证:
 
 1. 元数据字段(Hard Metric):
+
    * 检查 `usage.prompt_tokens_details` 是否返回了 `cached_tokens` 或 `cache_read_input_tokens`.
 
 2. TTFT 与推理耗时断崖式下降(Soft/Performance Metric):
+
    * 构造一段长前缀(建议 2000 ~ 3000 tokens, 因为很多引擎如 vLLM/SGLang/DeepSeek 设有 64 或 1024 tokens 的缓存门槛).
    * 将 `max_tokens` 固定为一个极小值(如 `10`), 剥离 Decode(输出生成)耗时的干扰, 让总耗时完全由 Prefill 决定.
    * 第 1 次请求(Cold Miss): 全量计算 KV Cache 并写入缓存, TTFT 和 `predict_time` 较高.
@@ -287,12 +208,14 @@ Q: 我想验证模型推理服务是否开启了前缀缓存, 请输出完整的
 运行该脚本后, 观察报告输出:
 
 1. 理想情况(前缀缓存生效):
+
    * Step 1 (Cold): TTFT 约为 `800ms ~ 2000ms`.
    * Step 2 & 3 (Warm): TTFT 降至 `80ms ~ 250ms`(仅剩网络 RTT + 小于 10 个 token 的 prefill).
    * Step 4 (Control): TTFT 重新升至 `800ms ~ 2000ms`.
    * 若响应头/Body 中的 `prompt_tokens_details` 返回了非空的 `cached_tokens: 2000+`, 则可直接作为显式证据.
 
 2. 多节点负载均衡(Round-Robin)特殊情况:
+
    * 如果 Step 2 依然很慢, 但 Step 3 变快了, 说明集群有 2 个 Worker 节点, 第 2 次请求被路由到了第 2 台冷节点上. 针对这种情况, 可以在网关配置基于客户端 IP / Session 的一致性哈希路由以充分发挥缓存价值.
 
 --------------------------------------------------------------------------------------------------
@@ -302,6 +225,7 @@ Q: 我想验证模型推理服务出现异常, 客户端因为长时间没有接
 在 LLM 流式(Streaming)推理服务中, "长时间未接收到数据导致客户端超时(Read Timeout / Idle Timeout)" 是最致命的隐患之一. 如果客户端没有设置合理的超时或看门狗机制, 线程会被永久阻塞, 导致连接池耗尽、网关 Worker 线程饿死.
 
 通常有两类典型的"断流/未响应"场景:
+
 1. TTFT 首 Token 等待超时: 请求已发送, 但服务端由于排队过长、Prefill 显存死锁或 Worker 卡死, 迟迟不吐出第一个 Token.
 2. 中途断流/挂起超时(Mid-stream Stall): 模型吐了几个 Token 后, GPU Worker 发生 NCCL 通信挂死、OOM 崩溃或网络静默丢包, 流式连接保持开放但没有任何新数据到达.
 
@@ -312,6 +236,7 @@ Q: 我想验证模型推理服务出现异常, 客户端因为长时间没有接
 为了让你既能在真实云端服务上触发超时保护, 又能在不破坏线上服务的前提下 100% 稳定复现各类"服务端卡死/中途断流"的极端场景, 下面的脚本内置了一个轻量级本地故障注入服务器进行端到端验证.
 
 #### 依赖准备
+
 ```bash
 pip install requests
 ```
@@ -409,328 +334,6 @@ $
    - 连接阶段异常: 区分是建立连接超时(`ConnectTimeout`)还是连不上被拒(`ConnectionRefused`).
    - 推理阶段异常: 区分是生成超时(`ReadTimeout`)还是流在中间被掐断(`ChunkedEncodingError`).
    - 业务错误码: 400(参数/模型名)、401(Auth Token)、429(QPS 超限)、500(后端显存 OOM/崩溃)、502/504(Gateway Timeout).
-
---------------------------------------------------------------------------------------------------
-
-
-代码如下所示,
-```python
-```
-不要使用 log 输出日志, 直接使用 print 输出日志信息, 保证日志信息顺序的准确
-
-
---------------------------------------------------------------------------------------------------
-
-Q: 运行脚本之后, 输出的日志如下:
-```
-```
-从日志中可以看到有两个问题, 一是为什么会出现乱码, 是不是代码中设置的编码有关, 二是似乎并没有按照严格的代码执行顺序输出日志
-
-这是一个在 Python 处理 LLM 流式(SSE)传输中非常典型且隐蔽的底层编码陷阱.
-
-你观察到的两个现象(中文乱码 以及 看似日志乱序/频繁报畸形帧), 本质上是由同一个根本原因引起的连环反应.
-
----
-
-### 一、两个问题的根本原因深度剖析
-
-#### 1. 为什么会出现乱码(`ç"¨æˆ·` -> `用户`)?
-
-* 根因: `requests.iter_lines(decode_unicode=True)` 内部依赖 `response.encoding`. 如果推理网关返回的 `Content-Type` 是 `text/event-stream` 或 `application/json` 且未显式带上 `charset=utf-8`, `requests` 会按照 HTTP RFC 规范默认采用 `ISO-8859-1`(Latin-1) 解码.
-
-* 现象映射:
-  * 中文"用户"的 UTF-8 字节是: `\xe7\x94\xa8 \xe6\x88\xb7`
-  * 按 `ISO-8859-1` 解码就变成了: `\xe7`(ç) `\x94`(") `\xa8`(¨) `\xe6`(æ) `\x88`(ˆ) `\xb7`(·) $\rightarrow$ `ç"¨æˆ·`.
-
----
-
-#### 2. 为什么看似"日志乱序"并伴随"畸形帧警告"?
-
-看你日志中的这段核心异常:
-```text
-[DEBUG] [1] SSE 数据流: data: {"id":..., "reasoning_content":"å†
-[WARN]  [1] 忽略畸形 SSE 帧: data: {"id":..., "reasoning_content":"å†
-[DEBUG] [1] SSE 数据流: å­˜"}}],"usage":null,"metrics":null}
-```
-* 根因(Unicode `NEL` 换行符截断陷阱):
-  * 模型当时正在输出中文"内存", 其中"内"的 UTF-8 字节是 `\xe5\x86\x85`, "存"是 `\xe5\xad\x98`.
-  * 当以 `ISO-8859-1` 提前解码为字符串后, 第三个字节 `\x85` 变成了 Unicode 字符 `\u0085`.
-  * 在 Python 3 的字符串切分规则中, `\u0085` 代表 `NEL`(Next Line, 下一行控制符)！
-  * 这导致 `iter_lines(decode_unicode=True)` 误以为遇到了换行符, 强行把一条完整的 JSON 在"内"字中间腰斩为两截！
-* 连锁反应:
-  1. 前半截 `... "reasoning_content":"å†` 被切出来, 由于 JSON 括号未闭合, `json.loads` 报错, 触发了 `[WARN] 忽略畸形 SSE 帧`.
-  2. 后半截 `å­˜"}}],"usage":...` 紧接着被当做下一行读出, 由于它不带 `data:` 前缀, 被当做普通数据打印.
-  3. 这并不是代码没有按顺序执行, 而是完整的单行数据被错误地劈成了两半, 从而产生了日志穿插和乱序的错觉.
-
----
-
-### 二、彻底解决方案
-
-1. 字节级流式读取(Byte-level Stream): 禁用 `decode_unicode=True`, 让底层仅按照标准的换行符字节 `\n` (`0x0A`) 进行断行, 避免中文字节中的 `0x85` 被误当换行符.
-2. 显式 UTF-8 解码: 在拿到完整的整行字节后, 再执行 `line_bytes.decode('utf-8')`.
-3. 增加 ANSI 颜色开关: 针对某些不兼容 ANSI 颜色的日志终端, 增加 `ENABLE_COLOR` 开关, 避免输出原始的 `[36m` 等字符.
-
----
-
-### 三、修复后的完整 Python 脚本
-
-```python
-
-```
-
-
-
---------------------------------------------------------------------------------------------------
-
-
-WITH RECURSIVE `hours_generator` AS (
-    -- 1. 生成当天 00:00:00 到 23:00:00 的 24 个时间点
-    SELECT
-        '2026-08-26 00:00:00' AS `stat_hour_str`,
-        0 AS `h`
-    UNION ALL
-    SELECT
-        DATE_FORMAT(DATE_ADD('2026-08-26 00:00:00', INTERVAL `h` + 1 HOUR), '%Y-%m-%d %H:00:00'),
-        `h` + 1
-    FROM `hours_generator`
-    WHERE `h` < 23
-),
-`daily_logs` AS (
-    -- 2. 统计当天有日志的小时数据
-    SELECT
-        DATE_FORMAT(`created_at`, '%Y-%m-%d %H:00:00') AS `stat_hour_str`,
-        COUNT(1)            AS `request_count`,
-        SUM(`input_token`)  AS `total_input_token`,
-        SUM(`output_token`) AS `total_output_token`,
-        SUM(`cached_token`) AS `total_cached_token`,
-        SUM(`total_token`)  AS `sum_total_tokens`
-    FROM `token_audit_logs`
-    WHERE `original_auth` = 'kn49enthcjzklckavdwhhleo'
-      AND `authorization` = 'd0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o'
-      AND `created_at` >= '2026-08-26 00:00:00.000'
-      AND `created_at` <  '2026-08-27 00:00:00.000'
-    GROUP BY `stat_hour_str`
-)
--- 3. LEFT JOIN 补齐没有调用记录的小时, 用 0 填充
-SELECT
-    h.`stat_hour_str` AS `stat_hour`,
-    COALESCE(l.`request_count`, 0)      AS `request_count`,
-    COALESCE(l.`total_input_token`, 0)  AS `total_input_token`,
-    COALESCE(l.`total_output_token`, 0) AS `total_output_token`,
-    COALESCE(l.`total_cached_token`, 0) AS `total_cached_token`,
-    COALESCE(l.`sum_total_tokens`, 0)   AS `sum_total_tokens`
-FROM `hours_generator` h
-LEFT JOIN `daily_logs` l ON h.`stat_hour_str` = l.`stat_hour_str`
-ORDER BY h.`stat_hour_str` ASC;
-
-这条 SQL 语句采用了 "分治思想", 巧妙地解决了时序数据统计中经典的"时间断点(某些小时无数据)补零"问题.
-
-整条语句由 3 个核心部分组成:
-
-1. `hours_generator`: 生成当天 24 个整点时间梯子的"虚拟日历表";
-2. `daily_logs`: 从物理表中统计当天有日志的小时数据;
-3. 主查询(`LEFT JOIN` + `COALESCE`): 以日历表为主表进行左连接, 无数据的小时自动填充为 `0`.
-
----
-
-### 第一部分: `hours_generator`(递归生成 24 小时时间轴)
-
-```sql
-WITH RECURSIVE `hours_generator` AS (
-    -- 1. 锚点查询(初始状态): 生成当天的 0 点, 计数器 h = 0
-    SELECT
-        '2026-08-26 00:00:00' AS `stat_hour_str`,
-        0 AS `h`
-    UNION ALL
-    -- 2. 递归查询(循环迭代): 在上一行的基础上每次 +1 小时, h 计数器 +1
-    SELECT
-        DATE_FORMAT(DATE_ADD('2026-08-26 00:00:00', INTERVAL `h` + 1 HOUR), '%Y-%m-%d %H:00:00'),
-        `h` + 1
-    FROM `hours_generator`
-    WHERE `h` < 23 -- 3. 循环终止条件: h 达到 23 时停止(共生成 0~23 点, 共 24 行)
-)
-```
-
-#### 工作原理(类似编程语言中的 `for` 循环):
-
-* 初始值(Anchor): 放入第一行 `2026-08-26 00:00:00`, `h = 0`.
-* 迭代(Recursive):
-  * 第 2 次循环: 取 `h=0`, 加 1 小时得到 `01:00:00`, 此时 `h=1`.
-  * 第 3 次循环: 取 `h=1`, 加 2 小时得到 `02:00:00`, 此时 `h=2`.
-  * ... 直到 `h=22` 生成 `23:00:00`(`h` 变为 23).
-* 终止条件: `WHERE h < 23` 使得下一次判断不成立, 循环结束.
-
-> 生成结果(内存临时表): 严格包含 24 行(从 `2026-08-26 00:00:00` 到 `2026-08-26 23:00:00`).
-
----
-
-### 第二部分: `daily_logs`(业务数据预聚合)
-
-```sql
-`daily_logs` AS (
-    SELECT
-        DATE_FORMAT(`created_at`, '%Y-%m-%d %H:00:00') AS `stat_hour_str`,
-        COUNT(1)            AS `request_count`,
-        SUM(`input_token`)  AS `total_input_token`,
-        SUM(`output_token`) AS `total_output_token`,
-        SUM(`cached_token`) AS `total_cached_token`,
-        SUM(`total_token`)  AS `sum_total_tokens`
-    FROM `token_audit_logs`
-    WHERE `original_auth` = 'kn49enthcjzklckavdwhhleo'
-      AND `authorization` = 'd0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o'
-      AND `created_at` >= '2026-08-26 00:00:00.000'
-      AND `created_at` <  '2026-08-27 00:00:00.000'
-    GROUP BY `stat_hour_str`
-)
-```
-
-#### 关键细节解析:
-
-1. `DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')`:
-   * 将带有毫秒的时间(如 `2026-08-26 14:25:36.123`)统一截断为整点字符串 `2026-08-26 14:00:00`, 作为分组依据.
-2. `WHERE` 的左闭右开区间 `[00:00:00, 次日00:00:00)`:
-   * 严格包含当天所有的毫秒(`00:00:00.000` 到 `23:59:59.999`), 避免漏查.
-3. `GROUP BY stat_hour_str`:
-   * 对同一小时内的日志进行累加(`SUM`)和计数(`COUNT`).
-
-> 输出特征: 如果全天只有 10 点、14 点有调用, 那么这个临时表只有 2 行数据.
-
----
-
-### 第三部分: 主查询(`LEFT JOIN` 关联与 `COALESCE` 补零)
-
-```sql
-SELECT
-    h.`stat_hour_str` AS `stat_hour`,
-    COALESCE(l.`request_count`, 0)      AS `request_count`,
-    COALESCE(l.`total_input_token`, 0)  AS `total_input_token`,
-    COALESCE(l.`total_output_token`, 0) AS `total_output_token`,
-    COALESCE(l.`total_cached_token`, 0) AS `total_cached_token`,
-    COALESCE(l.`sum_total_tokens`, 0)   AS `sum_total_tokens`
-FROM `hours_generator` h
-LEFT JOIN `daily_logs` l ON h.`stat_hour_str` = l.`stat_hour_str`
-ORDER BY h.`stat_hour_str` ASC;
-```
-
-#### 关键技术点:
-1. 以 `hours_generator`(h)作为左表进行 `LEFT JOIN`:
-   * `LEFT JOIN` 会无条件保留左表的全部 24 行.
-   * 当右表 `daily_logs`(l)在某个小时没有数据时, 右表对应的字段值全部为 `NULL`.
-2. `COALESCE(val, 0)` 函数:
-   * 作用: 返回参数列表中第一个非 `NULL` 的值.
-   * 如果 `l.total_input_token` 有值(例如 `5000`), 则返回 `5000`;
-   * 如果为 `NULL`(代表该小时无日志), 则返回默认值 `0`.
-3. `ORDER BY h.stat_hour_str ASC`:
-   * 确保最终输出按时间顺序(从 00 点到 23 点)严格排序.
-
----
-
-### 数据流动示意图
-
-```text
-[hours_generator (固定24行)]             [daily_logs (仅有日志的小时)]
-00:00:00 ---------------- LEFT JOIN ---> (无数据) ---------> COALESCE 补 0
-...
-10:00:00 ---------------- LEFT JOIN ---> 10:00:00 (5000 Token) -> 输出 5000
-...
-23:00:00 ---------------- LEFT JOIN ---> (无数据) ---------> COALESCE 补 0
-
-===============================================================
-最终输出: 严格 24 行连续的、无 NULL 的整洁时序数据(前端图表可直接渲染)
-```
-
-
-
-
---------------------------------------------------------------------------------------------------
-
-
-```bash
-export GPUGEEK_API_KEY='d0d9e85m1ayzlux1000dkuffvwpkrrl2e01iyf3o'
-CACHE_PREFIX_TEXT=$(printf '这是用于验证上下文缓存的固定前缀. 缓存命中要求后续请求从第一个 token 开始保持完全一致. 以下内容不会在不同请求之间发生任何变化.  %.0s' {1..50})
-jq -n --arg prefix "$CACHE_PREFIX_TEXT" '{
-  model: "Vendor3/DeepSeek-V4-Flash",
-  user_id: "cache-demo-20260827-small",
-  messages: [
-    {role: "system", content: $prefix},
-    {role: "user", content: "请仅回答: 收到"}
-  ],
-  temperature: 0,
-  max_tokens: 2
-}' |
-curl --silent --show-error \
-  --request POST \
-  --url 'https://api.gpugeek.com/v1/chat/completions' \
-  --header "Authorization: Bearer ${GPUGEEK_API_KEY}" \
-  --header 'Content-Type: application/json' \
-  --data-binary @- |
-jq '{id, usage, metrics}'
-{
-  "id": "cds_a84273d6-c94e-4453-a3a5-2f8ad37e81b9",
-  "usage": {
-    "prompt_tokens": 1709,
-    "completion_tokens": 3,
-    "total_tokens": 1712,
-    "prompt_tokens_details": {
-      "cache_creation": {},
-      "cached_tokens": 1024
-    }
-  },
-  "metrics": {
-    "input_token_count": 1709,
-    "output_token_count": 3,
-    "predict_time": 0.994132913
-  }
-}
-
-
-
-
-
-
-
-
-
-
-
-export GPUGEEK_API_KEY='kn49enthcjzklckavdwhhleo'
-CACHE_PREFIX_TEXT=$(printf '这是用于验证上下文缓存的固定前缀. 缓存命中要求后续请求从第一个 token 开始保持完全一致. 以下内容不会在不同请求之间发生任何变化.  %.0s' {1..50})
-jq -n --arg prefix "$CACHE_PREFIX_TEXT" '{
-  model: "capital",
-  user_id: "cache-demo-20260827-small",
-  messages: [
-    {role: "system", content: $prefix},
-    {role: "user", content: "请仅回答: 收到"}
-  ],
-  temperature: 0,
-  max_tokens: 2
-}' |
-curl --silent --show-error \
-  --request POST \
-  --url 'http://172.16.10.55:24182/v1/chat/completions' \
-  --header "Authorization: Bearer ${GPUGEEK_API_KEY}" \
-  --header 'Content-Type: application/json' \
-  --data-binary @- |
-jq '{id, usage, metrics}'
-
-
-$ curl -sv http://172.16.10.55:24182/v1/chat/completions \
--X POST \
--H 'Content-Type: application/json' \
--H 'Authorization: Bearer kn49enthcjzklckavdwhhleo' \
--d '{
-    "model": "capital",
-    "messages": [
-        {
-            "role": "user",
-            "content": "什么是redis?"
-        }
-    ]
-}'
-
-
-```
-
 
 --------------------------------------------------------------------------------------------------
 
@@ -1122,12 +725,14 @@ Q: 在上述服务端和客户端的各种异常中, 我需要测试环境中主
 
 * 触发手段:
   * 方法 A(抢占显存法): 在启动 vLLM 之前, 先运行一段 Python 脚本吃掉大部分显存, 然后再启动 vLLM:
-    ```python
-    # pre_occupy.py: 占用例如 80% 的显存
-    import torch, time
-    x = torch.empty((80, 1024, 1024, 1024 // 4), device='cuda', dtype=torch.float32) # 约占用 80GB
-    time.sleep(3600)
-    ```
+
+```python
+# pre_occupy.py: 占用例如 80% 的显存
+import torch, time
+x = torch.empty((80, 1024, 1024, 1024 // 4), device='cuda', dtype=torch.float32) # 约占用 80GB
+time.sleep(3600)
+```
+
   * 方法 B(参数压榨法): 启动 vLLM 时将 `--gpu-memory-utilization` 设置为 `0.99`, 并配合极大模型或极大的 `--max-model-len 32768`.
 * 服务端现象: 启动阶段抛出 `torch.cuda.OutOfMemoryError`, 容器或进程直接退出(Exit Code 1).
 * 客户端验证目标: 客户端发起请求应立即捕获 `httpx.ConnectError`(拒绝连接)或网关层的 `502 Bad Gateway`, 验证客户端的健康检查与告警机制.
@@ -1151,12 +756,14 @@ Q: 在上述服务端和客户端的各种异常中, 我需要测试环境中主
 * 触发手段:
   * 以张量并行启动服务(如 `--tensor-parallel-size 2`).
   * 在发起推理的途中, 直接在宿主机上找到其中一个 Worker 进程并强杀:
-    ```bash
-    # 查找 vLLM 相关子进程
-    ps aux | grep vllm
-    # 强制杀死某一个特定的 Worker PID
-    kill -9 <Worker_PID>
-    ```
+
+```bash
+# 查找 vLLM 相关子进程
+ps aux | grep vllm
+# 强制杀死某一个特定的 Worker PID
+kill -9 <Worker_PID>
+```
+
 * 服务端现象: Ray 抛出 `RayActorError` 或主进程日志抛出 `RuntimeError: Engine background task failed`.
 * 客户端验证目标:
   * 正在进行的流式传输应立即抛出 `httpx.RemoteProtocolError` 或连接中断.
@@ -1166,15 +773,19 @@ Q: 在上述服务端和客户端的各种异常中, 我需要测试环境中主
 
 * 触发手段:
   * 启动前大幅缩短超时时间(默认 30 分钟过长, 测试不便):
-    ```bash
-    export NCCL_TIMEOUT=15  # 设为 15 秒
-    python -m vllm.entrypoints.openai.api_server ... --tensor-parallel-size 2
-    ```
+
+```bash
+export NCCL_TIMEOUT=15  # 设为 15 秒
+python -m vllm.entrypoints.openai.api_server ... --tensor-parallel-size 2
+```
+
   * 客户端发起一个请求, 在生成过程中, 暂停(挂起)其中一个 Rank 进程:
-    ```bash
-    kill -STOP <Worker_PID>   # 挂起该进程, 卡死集合通信
-    ```
-* 服务端现象: 另一个 Worker 和主进程由于等不到通信信号, 进入阻塞状态；15 秒后触发看门狗崩溃 `NCCL watchdog thread: detected timeout`.
+
+```bash
+kill -STOP <Worker_PID>   # 挂起该进程, 卡死集合通信
+```
+
+* 服务端现象: 另一个 Worker 和主进程由于等不到通信信号, 进入阻塞状态; 15 秒后触发看门狗崩溃 `NCCL watchdog thread: detected timeout`.
 * 客户端验证目标:
   * 重点验证客户端的 Inter-Token / Chunk Timeout(流闲置超时).
   * 在 15 秒服务端崩溃前, 客户端自身的 Chunk Timeout(如设为 5s)应先于服务端报错主动断开, 证明客户端具备防死锁挂起能力.
@@ -1197,14 +808,16 @@ Q: 在上述服务端和客户端的各种异常中, 我需要测试环境中主
 
 * 触发手段:
   * 客户端发起流式生成请求(`max_tokens=2048`), 设置在收到第 5 个 Token 时, 主动切断连接:
-    ```python
-    # 模拟用户点击了前端界面的"停止生成"按钮
-    async for chunk in client.generate_stream(prompt):
-        count += 1
-        if count == 5:
-            await response.aclose()  # 主动抛出取消/关闭 socket
-            break
-    ```
+
+```python
+# 模拟用户点击了前端界面的"停止生成"按钮
+async for chunk in client.generate_stream(prompt):
+    count += 1
+    if count == 5:
+        await response.aclose()  # 主动抛出取消/关闭 socket
+        break
+```
+
 * 服务端现象:
   * 服务端 Uvicorn / AsyncLLMEngine 应抛出 `ClientDisconnected` 或捕获到 `asyncio.CancelledError`.
   * 日志提示 `Request ... was cancelled by client`.
@@ -1218,14 +831,16 @@ Q: 在上述服务端和客户端的各种异常中, 我需要测试环境中主
 
 * 触发手段:
   * 构造一个极长的 Prompt(超出模型的 `max_model_len`), 或者 `prompt_tokens + max_tokens > max_model_len`.
-    ```python
-    # 故意发送一个超出长度的 Payload
-    payload = {
-        "model": "qwen",
-        "prompt": "hello " * 40000,
-        "max_tokens": 100
-    }
-    ```
+
+```python
+# 故意发送一个超出长度的 Payload
+payload = {
+    "model": "qwen",
+    "prompt": "hello " * 40000,
+    "max_tokens": 100
+}
+```
+
 * 服务端现象: 立即返回 HTTP `400 Bad Request`, 包含错误体 `invalid_request_error`.
 * 客户端验证目标:
   * 若客户端有前置 Tokenizer 检查, 此请求应该在本地直接拦截并报错, 根本不会发出网络请求.
@@ -1235,14 +850,16 @@ Q: 在上述服务端和客户端的各种异常中, 我需要测试环境中主
 
 * 触发手段:
   * 传入语法错误的 Regex, 或逻辑相互矛盾的 JSON Schema:
-    ```python
-    # 传入非法的正则表达式语法(例如括号不闭合)
-    payload = {
-        "model": "qwen",
-        "prompt": "Generate json",
-        "guided_regex": "(?P<invalid_syntax"
-    }
-    ```
+
+```python
+# 传入非法的正则表达式语法(例如括号不闭合)
+payload = {
+    "model": "qwen",
+    "prompt": "Generate json",
+    "guided_regex": "(?P<invalid_syntax"
+}
+```
+
   * 传入一个让词表全被屏蔽的严格约束(例如要求输出大写字母, 但限定只用数字回复).
 * 服务端现象: Outlines / XGrammar 引擎解析失败, 服务端返回 `400` 或生成阶段由于没有合法 Token 报错终止.
 * 客户端验证目标: 验证客户端对特殊生成参数校验异常的捕获与降级处理(如通知调用方 Prompt/Schema 错误).
@@ -1256,15 +873,18 @@ Q: 在上述服务端和客户端的各种异常中, 我需要测试环境中主
 #### 1. 制造高丢包与断流(丢弃部分 Chunk)
 
 在服务端执行命令:
+
 ```bash
 # 增加 2 秒的网络延迟, 并设置 20% 的随机丢包
 sudo tc qdisc add dev eth0 root netem delay 2000ms loss 20%
 ```
+
 * 客户端验证目标: 验证客户端对于"偶尔卡顿"与"连接中断"的边界判定.
 
 #### 2. 清理网络混沌配置
 
 测试完成后, 务必还原网络环境:
+
 ```bash
 sudo tc qdisc del dev eth0 root
 ```
@@ -1303,13 +923,14 @@ Q: 有成熟的在测试环境中对 LLM 推理服务进行故障注入的框架
   * 模拟中间断流(Broken Stream): 使用 `slicer` toxic 将 TCP 数据包切碎并在中途使用 `reset_peer` 或 `timeout` 强行阻断连接, 验证客户端能否发现"未收到 `finish_reason` 却断连"的异常.
   * 模拟慢客户端(Slow Client): 使用 `bandwidth` 限制客户端下行速率, 测试服务端发送队列打满后的背压(Backpressure)机制.
 * 使用方式示例(Python 集成测试):
-  ```python
-  from toxiproxy import Toxiproxy
 
-  proxy = Toxiproxy().get_proxy("vllm_service")
-  # 动态注入: 在传输到一半时切断连接
-  proxy.add_toxic(type="reset_peer", name="sudden_disconnect", stream="downstream", toxicity=1.0)
-  ```
+```python
+from toxiproxy import Toxiproxy
+
+proxy = Toxiproxy().get_proxy("vllm_service")
+# 动态注入: 在传输到一半时切断连接
+proxy.add_toxic(type="reset_peer", name="sudden_disconnect", stream="downstream", toxicity=1.0)
+```
 
 ---
 
@@ -1330,13 +951,14 @@ Q: 有成熟的在测试环境中对 LLM 推理服务进行故障注入的框架
 如果 vLLM 部署在裸金属物理机(Bare Metal)或单机多卡环境中:
 * 核心优势: 无需庞大的 K8s 控制面, 一条命令行即可精准操控进程.
 * 典型测试动作:
-  ```bash
-  # 1. 模拟 NCCL 卡死: 给某个 TP worker 发送 SIGSTOP 挂起进程
-  blade create process stop --process vllm --process-cmd-keyword "worker"
 
-  # 2. 模拟 Worker 突发死亡: 直接 SIGKILL
-  blade create process kill --process-cmd-keyword "ray::"
-  ```
+```bash
+# 1. 模拟 NCCL 卡死: 给某个 TP worker 发送 SIGSTOP 挂起进程
+blade create process stop --process vllm --process-cmd-keyword "worker"
+
+# 2. 模拟 Worker 突发死亡: 直接 SIGKILL
+blade create process kill --process-cmd-keyword "ray::"
+```
 
 ---
 
@@ -1349,10 +971,12 @@ Q: 有成熟的在测试环境中对 LLM 推理服务进行故障注入的框架
 NVIDIA 官方提供的成熟运维与诊断套件:
 * 模拟计算变慢(Straggler / 掉队卡异常):
   使用 `nvidia-smi` 锁定其中一张 GPU 的显卡核心频率, 人为制造"多卡性能不均":
-  ```bash
-  # 将 GPU 1 的频率锁在最低档(如 300MHz), 测试跨卡 All-Reduce 的长尾延迟
-  sudo nvidia-smi -i 1 -lgc 300,300
-  ```
+
+```bash
+# 将 GPU 1 的频率锁在最低档(如 300MHz), 测试跨卡 All-Reduce 的长尾延迟
+sudo nvidia-smi -i 1 -lgc 300,300
+```
+
 * 硬件级掉卡模拟:
   使用 DCGM 的故障注入模式或在系统级使能 PCIe 重置(`nvidia-smi --gpu-reset`), 测试服务在显卡硬件掉线时的处理策略.
 
@@ -1373,16 +997,18 @@ NVIDIA 官方提供的成熟运维与诊断套件:
 
 vLLM 源码内置的压测工具本身就是优秀的异常构造器:
 * 通过传入极端参数构造 KV Cache 显存风暴:
-  ```bash
-  # 瞬间以高并发打入极长 Prompt, 直接击穿预分配的 KV 内存池
-  python3 -m vllm.entrypoints.openai.api_server ... &
 
-  python3 -m vllm.benchmarks.benchmark_serving \
-      --dataset-name random \
-      --random-input-len 8000 \
-      --random-output-len 2048 \
-      --request-rate 50
-  ```
+```bash
+# 瞬间以高并发打入极长 Prompt, 直接击穿预分配的 KV 内存池
+python3 -m vllm.entrypoints.openai.api_server ... &
+
+python3 -m vllm.benchmarks.benchmark_serving \
+    --dataset-name random \
+    --random-input-len 8000 \
+    --random-output-len 2048 \
+    --request-rate 50
+```
+
 * 通过该套件能极其稳定地复现调度器的换入/换出(Swap)、重算(Recompute)与请求丢弃.
 
 #### 2. Locust / k6(搭配 SSE 扩展)
@@ -1410,8 +1036,8 @@ vLLM 源码内置的压测工具本身就是优秀的异常构造器:
 [ Chaos Mesh / ChaosBlade / nvidia-smi 脚本 ]
 ```
 
-1. 协议层与网络层 交给 Toxiproxy: 覆盖"吐字卡死、中途断流、慢客户端"；
-2. 进程与硬件层 交给 ChaosBlade / Chaos Mesh: 覆盖"TP Worker 暴毙、NCCL 挂起、GPU 掉队"；
+1. 协议层与网络层 交给 Toxiproxy: 覆盖"吐字卡死、中途断流、慢客户端";
+2. 进程与硬件层 交给 ChaosBlade / Chaos Mesh: 覆盖"TP Worker 暴毙、NCCL 挂起、GPU 掉队";
 3. 调度与算法层 交给 Locust / vLLM Benchmark: 覆盖"长文本压榨、KV Cache 抢占溢出、429 拥塞".
 
 --------------------------------------------------------------------------------------------------
@@ -1606,6 +1232,7 @@ print(f"Response: {response.text}")
 # 杀死后台 EngineCore 或 Worker 进程, 但保留 Uvicorn 主服务
 docker exec -it vllm-server pkill -9 -f "EngineCore"
 ```
+
 (注: 如果当前 vLLM 版本采用 Ray 或 Multiprocessing Worker, 可执行 `docker exec -it vllm-server pkill -9 -f "vllm.worker"`)
 
 3. 客户端立即发起标准请求:
@@ -1632,10 +1259,12 @@ print(f"Body: {response.text}")
 4. 现象:
 
 - 客户端将立刻收到:
+
 ```json
 HTTP/1.1 500 Internal Server Error
 {"error": {"message": "EngineCore is dead or has errored already.", "type": "internal_error", "code": 500}}
 ```
+
 - 服务端终端会因你配置了 `TORCH_SHOW_CPP_STACKTRACES=1` 和 `DEBUG` 打印完整的进程退出堆栈.
 
 ---
@@ -1728,6 +1357,7 @@ Q: 使用方案三: 服务端代码拦截/中间件注入, 原始的 api_server.
 ```python
 # /usr/local/lib/python3.12/dist-packages/vllm/entrypoints/openai/api_server.py
 ```
+
 请输出完整的使用方案3修改之后的文件
 
 以下是针对你的源码进行修改后的完整 `api_server.py` 文件.
@@ -1767,6 +1397,7 @@ cat << 'EOF' > $FILE_PATH
 <粘贴上面的完整代码>
 EOF
 ```
+
 然后正常执行你原有的 `vllm serve ...` 命令启动服务.
 
 #### 2. 客户端调用方式
@@ -1852,7 +1483,7 @@ for middleware in args.middleware:
 
 从源码可以看到:
 1. `--middleware` 参数接收一个形如 `<module_path>.<object_name>` 的字符串, 并通过 `importlib.import_module` 动态导入.
-2. 如果传入的是一个协程函数（`inspect.iscoroutinefunction`, 即 `async def`）, vLLM 会直接执行 `app.middleware("http")(imported)`. 这与你在源码中写的 `@app.middleware("http")` 底层行为完全等价.
+2. 如果传入的是一个协程函数(`inspect.iscoroutinefunction`, 即 `async def`), vLLM 会直接执行 `app.middleware("http")(imported)`. 这与你在源码中写的 `@app.middleware("http")` 底层行为完全等价.
 3. 如果传入的是一个类, vLLM 会通过 `app.add_middleware(imported)` 加载.
 
 ---
@@ -1861,7 +1492,7 @@ for middleware in args.middleware:
 
 #### 第一步: 将中间件代码抽取为独立的 Python 模块
 
-在宿主机上（例如 `/data/middlewares/chaos_middleware.py`）创建一个独立的文件, 将中间件逻辑剥离出来:
+在宿主机上(例如 `/data/middlewares/chaos_middleware.py`)创建一个独立的文件, 将中间件逻辑剥离出来:
 
 ```bash
 mkdir -p /data/middlewares
@@ -1909,7 +1540,7 @@ EOF
 
 #### 第二步: 调整 Docker 容器挂载与 Python 路径
 
-通过挂载将宿主机的 `/data/middlewares` 映射到容器内部（例如 `/workspace/middlewares`）, 并通过设置环境变量 `PYTHONPATH` 确保 Python 能够找到该模块.
+通过挂载将宿主机的 `/data/middlewares` 映射到容器内部(例如 `/workspace/middlewares`), 并通过设置环境变量 `PYTHONPATH` 确保 Python 能够找到该模块.
 
 在启动 Docker 容器时挂载并导出环境:
 
@@ -1982,6 +1613,7 @@ vllm serve \
 服务启动完毕后, 在宿主机或测试机上验证:
 
 ##### 1. 正常请求验证
+
 ```bash
 curl -i -X POST http://127.0.0.1:8090/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -1991,9 +1623,11 @@ curl -i -X POST http://127.0.0.1:8090/v1/chat/completions \
     "messages": [{"role": "user", "content": "ping"}]
   }'
 ```
+
 > 应正常返回 `HTTP/1.1 200 OK`.
 
 ##### 2. 模拟 503 Service Unavailable 拦截
+
 ```bash
 curl -i -X POST http://127.0.0.1:8090/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -2004,9 +1638,11 @@ curl -i -X POST http://127.0.0.1:8090/v1/chat/completions \
     "messages": [{"role": "user", "content": "ping"}]
   }'
 ```
+
 > 应立即返回 `HTTP/1.1 503 Service Unavailable` 及注入的 JSON 错误信息, 请求不会下发给 vLLM 引擎.
 
 ##### 3. 模拟抛出未捕获异常
+
 ```bash
 curl -i -X POST "http://127.0.0.1:8090/v1/chat/completions?chaos_fault=crash" \
   -H "Content-Type: application/json" \
@@ -2016,38 +1652,708 @@ curl -i -X POST "http://127.0.0.1:8090/v1/chat/completions?chaos_fault=crash" \
     "messages": [{"role": "user", "content": "ping"}]
   }'
 ```
-> 应触发未捕获异常并交由 FastAPI 底层全局 exception handler 捕获（返回 500）.
+
+> 应触发未捕获异常并交由 FastAPI 底层全局 exception handler 捕获(返回 500).
 
 ---
 
 ### 架构细节与注意事项 (Best Practices)
 
-1. 中间件执行顺序（洋葱模型）:
+1. 中间件执行顺序(洋葱模型):
    * FastAPI / Starlette 的中间件是后注册的包裹在最外层.
    * 在 `build_app` 中, `AuthenticationMiddleware` 先注册, `args.middleware` 后注册.
-   * 结果: 传入的 `--middleware` 会在 API Key 鉴权之前最先触达请求. 这意味着即使请求未携带 Bearer Token, 只要触发了 `X-Chaos-Fault`, 该中间件就会提前拦截报错. 这非常符合混沌工程（Chaos Testing）的预期.
+   * 结果: 传入的 `--middleware` 会在 API Key 鉴权之前最先触达请求. 这意味着即使请求未携带 Bearer Token, 只要触发了 `X-Chaos-Fault`, 该中间件就会提前拦截报错. 这非常符合混沌工程(Chaos Testing)的预期.
 2. 多中间件级联:
    * CLI 参数 `--middleware` 的 action 是 `append`, 支持多次指定. 例如:
-     ```bash
-     --middleware middlewares.trace.TraceMiddleware \
-     --middleware middlewares.chaos_middleware.chaos_fault_injection_middleware
-     ```
-3. 基于类的标准实现（可选替代方案）:
-   如果你希望代码更具规范性, 也可以使用 Starlette 的 `BaseHTTPMiddleware` 类:
-   ```python
-   from starlette.middleware.base import BaseHTTPMiddleware
-   from fastapi import Request
-   from fastapi.responses import JSONResponse
 
-   class ChaosFaultInjectionMiddleware(BaseHTTPMiddleware):
-       async def dispatch(self, request: Request, call_next):
-           # 逻辑与函数完全一致
-           ...
-           return await call_next(request)
-   ```
+```bash
+--middleware middlewares.trace.TraceMiddleware \
+--middleware middlewares.chaos_middleware.chaos_fault_injection_middleware
+```
+
+3. 基于类的标准实现(可选替代方案):
+   如果你希望代码更具规范性, 也可以使用 Starlette 的 `BaseHTTPMiddleware` 类:
+
+```python
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+class ChaosFaultInjectionMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # 逻辑与函数完全一致
+        ...
+        return await call_next(request)
+```
+
    vLLM 的 `inspect.isclass` 分支会自动调用 `app.add_middleware(imported)` 进行加载. 两种方式在当前场景下功能完全一致.
 
 --------------------------------------------------------------------------------------------------
+
+Q: 假设你是一位精通 LLM 以及 vLLM 的高级研究人员, 我使用 vllm 部署了模型推理服务, 并且想在模型推理服务中注入一些异常, 具体操作如下:
+```bash
+############### 实现一个 vllm 中间件, 代码如下 ###############
+$ cat chaos_middleware.py
+import logging
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+logger = logging.getLogger("vllm.entrypoints.openai.api_server")
+
+async def chaos_fault_injection_middleware(request: Request, call_next):
+    """
+    Chaos Fault Injection Middleware:
+    主动拦截请求并根据 X-Chaos-Fault 响应指定的 >=500 状态码或抛出异常
+    """
+    fault = request.headers.get("X-Chaos-Fault") or request.query_params.get("chaos_fault")
+    if fault:
+        logger.warning("Active chaos fault injection triggered with marker: %s", fault)
+
+        # 1. 指定 HTTP >= 500 状态码 (例如 500, 502, 503, 504)
+        if fault.isdigit() and int(fault) >= 500:
+            status_code = int(fault)
+            return JSONResponse(
+                status_code=status_code,
+                content={
+                    "error": {
+                        "message": f"Injected Fault: Service returned HTTP {status_code} intentionally.",
+                        "type": "chaos_fault_injection",
+                        "param": None,
+                        "code": status_code,
+                    }
+                },
+            )
+        # 2. 模拟抛出未捕获服务端严重异常, 验证异常处理机制
+        elif fault.lower() in ("exception", "crash", "raise"):
+            raise RuntimeError(
+                "Injected Fault: Simulated unhandled server exception for chaos test."
+            )
+
+    return await call_next(request)
+
+############### 实现一个代理服务, 代码如下 ###############
+$ chaos_proxy.py
+import json
+
+from aiohttp import web, ClientSession, ClientTimeout
+
+# 指向你目前宿主机上映射的 vLLM 端口
+UPSTREAM_VLLM_URL = "http://127.0.0.1:8000"
+PROXY_PORT = 8001
+FAIL_AFTER_CHUNKS = 5  # 在输出第 5 个 Chunk 后强制断开
+
+
+async def proxy_handler(request: web.Request):
+    target_url = f"{UPSTREAM_VLLM_URL}{request.rel_url}"
+    body = await request.read()
+
+    # 1. 打印客户端发来的请求详情
+    print("\n" + "=" * 35 + " [Proxy] 收到下游客户端请求 " + "=" * 35)
+    print(f"URL: {request.method} {request.rel_url} (来自: {request.remote})")
+    print("----- 请求头 (Request Headers) -----")
+    for k, v in request.headers.items():
+        # 高亮展示 request id 相关头
+        print(f"  {k}: {v}")
+
+    print("----- 请求体 (Request Body) -----")
+    try:
+        body_json = json.loads(body.decode("utf-8"))
+        print(json.dumps(body_json, indent=4, ensure_ascii=False))
+    except Exception:
+        print(body.decode("utf-8", errors="ignore"))
+
+    # 清理逐跳请求头, 重新打包转发给上游
+    headers = {
+        k: v
+        for k, v in request.headers.items()
+        if k.lower() not in ("host", "content-length", "transfer-encoding")
+    }
+
+    print("=" * 90)
+    print(f"正在将请求转发至上游 vLLM: {target_url} ...")
+
+    timeout = ClientTimeout(total=120)
+    async with ClientSession(timeout=timeout) as session:
+        try:
+            async with session.request(
+                method=request.method, url=target_url, headers=headers, data=body
+            ) as upstream_resp:
+                # 2. 打印上游 vLLM 返回的响应详情
+                print("\n" + "=" * 35 + " [Proxy] 收到上游 vLLM 响应 " + "=" * 35)
+                print(f"Status: {upstream_resp.status} {upstream_resp.reason}")
+                print("----- 响应头 (Upstream Headers) -----")
+                for k, v in upstream_resp.headers.items():
+                    print(f"  {k}: {v}")
+                print("=" * 90 + "\n")
+
+                # 建立与客户端的流式回传
+                downstream_resp = web.StreamResponse(
+                    status=upstream_resp.status,
+                    reason=upstream_resp.reason,
+                    headers=upstream_resp.headers,
+                )
+                await downstream_resp.prepare(request)
+
+                chunk_count = 0
+                async for chunk in upstream_resp.content.iter_any():
+                    chunk_count += 1
+                    raw_text = chunk.decode("utf-8", errors="ignore")
+
+                    # 打印 Chunk 日志
+                    print(
+                        f"[SSE Chunk #{chunk_count}] 大小: {len(chunk)} 字节 | 片段预览: {raw_text.strip()}..."
+                    )
+
+                    # 达到指定阈值, 实施故障注入
+                    if chunk_count > FAIL_AFTER_CHUNKS:
+                        print("\n" + "!" * 30 + " [故障注入触发] " + "!" * 30)
+                        print(
+                            f"⚡ 已转发 {chunk_count-1} 个 Chunk, 阈值达到! 立即强制斩断 TCP 传输 (TCP RST)!"
+                        )
+                        print("!" * 80 + "\n")
+                        if request.transport:
+                            request.transport.abort()
+                        return downstream_resp
+
+                    await downstream_resp.write(chunk)
+
+                await downstream_resp.write_eof()
+                return downstream_resp
+
+        except Exception as e:
+            print(f"[Chaos Proxy] 异常: {e}", exc_info=True)
+            raise
+
+
+app = web.Application()
+app.router.add_route("*", "/{path:.*}", proxy_handler)
+
+if __name__ == "__main__":
+    print(
+        f"混沌代理已启动: 监听端口 0.0.0.0:{PROXY_PORT} -> 转发至 {UPSTREAM_VLLM_URL}"
+    )
+    web.run_app(app, host="0.0.0.0", port=PROXY_PORT)
+
+############### 启动容器 ###############
+docker run -ti --rm \
+--entrypoint /usr/bin/env \
+--security-opt seccomp=unconfined \
+--gpus '"device=2"' \
+-v /data/model:/model \
+-p 0.0.0.0:8090:8000 \
+-p 0.0.0.0:8091:8001 \
+--name vllm-server \
+vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 bash
+
+############### 在容器中存在上述文件 ###############
+root@451b493be0f5:/vllm-workspace# ls -al /model/middlewares/
+total 12
+drwxr-xr-x 3 root root   74 Sep 22 03:05 .
+drwxr-xr-x 9 root root 4096 Sep 22 02:46 ..
+-rw-r--r-- 1 root root 1473 Sep 22 02:48 chaos_middleware.py
+-rw-r--r-- 1 root root 3889 Sep 22 03:05 chaos_proxy.py
+root@451b493be0f5:/vllm-workspace#
+
+############### 在容器中启动服务 ###############
+export PYTHONPATH="/model:${PYTHONPATH}"
+
+export VLLM_LOGGING_LEVEL=DEBUG
+export VLLM_DEBUG_LOG_API_SERVER_RESPONSE=TRUE
+export TORCH_SHOW_CPP_STACKTRACES=1
+
+vllm serve \
+/model/Qwen2.5-7B-Instruct \
+--served-model-name Qwen2.5-7B-Instruct \
+--trust-remote-code \
+--use-tqdm-on-load \
+--host 0.0.0.0 \
+--port 8000 \
+--api-key my_secret_token_123 my_secret_token_456 \
+--enable-log-requests \
+--enable-log-outputs \
+--no-disable-uvicorn-access-log \
+--uvicorn-log-level debug \
+--aggregate-engine-logging \
+--enable-logging-iteration-details \
+--log-error-stack \
+--cudagraph-metrics \
+--kv-cache-metrics \
+--enable-mfu-metrics \
+--enable-log-deltas \
+--enable-prompt-tokens-details \
+--enable-tokenizer-info-endpoint \
+--enable-server-load-tracking \
+--enable-force-include-usage \
+--shutdown-timeout 30 \
+--middleware middlewares.chaos_middleware.chaos_fault_injection_middleware
+
+```
+在容器中启动服务后, 我可以在容器外请求 8091 端口进行验证.
+请写一个 dockerfile 文件 build 一个新镜像实现上述功能, 使用新镜像就可以直接部署上述服务, 请列出完整的代码和详细的操作步骤
+
+在 LLM 高并发生产架构中, 进行应用层(HTTP 状态码 / 异常抛出)与传输层(TCP 异常中断 / SSE 流截断)的双层混沌工程测试是非常标准且必要的做法.
+
+为了将你的vLLM 引擎与混沌中间件/代理解耦并固化为一键启动的标准化 Docker 镜像, 核心设计思路如下:
+
+1. 多进程协同与生命周期管理: 在单容器内通过精简的 `entrypoint.sh` 管理两个异步进程(vLLM 引擎 `8000` + Chaos Proxy `8001`), 并做好 POSIX 信号传递(`SIGINT`/`SIGTERM`), 确保容器在 `docker stop` 时能够优雅关闭并清理 GPU 显存.
+2. 环境变量参数化: 将模型路径、API Token、故障阈值等硬编码抽离为环境变量, 提升镜像在不同环境下的复用性.
+3. 分层混沌测试:
+   - 端口 `8000`(映射宿主机 `8090`): 直连 vLLM, 支持 Header/Query 触发应用级 HTTP 5xx 注入.
+   - 端口 `8001`(映射宿主机 `8091`): 代理层, 除了传递应用级注入外, 专用于测试流式输出中途断连(TCP RST)场景.
+
+---
+
+### 一、目录组织结构
+
+在宿主机的工作目录下(例如 `vllm-chaos-builder/`), 创建以下 4 个文件:
+
+```bash
+vllm-chaos-builder/
+├── Dockerfile
+├── entrypoint.sh
+├── chaos_middleware.py
+└── chaos_proxy.py
+```
+
+---
+
+### 二、完整代码实现
+
+#### 1. `chaos_middleware.py`(FastAPI 应用层注入中间件)
+
+```python
+import logging
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+logger = logging.getLogger("vllm.entrypoints.openai.api_server")
+
+
+async def chaos_fault_injection_middleware(request: Request, call_next):
+    """Chaos Fault Injection Middleware:
+
+    主动拦截请求并根据 X-Chaos-Fault 响应指定的 >=500 状态码或抛出异常
+    """
+    fault = request.headers.get("X-Chaos-Fault") or request.query_params.get(
+        "chaos_fault"
+    )
+    if fault:
+        logger.warning(
+            "[Chaos Middleware] Active fault injection triggered with marker: %s",
+            fault,
+        )
+
+        # 1. 模拟指定的 HTTP >= 500 状态码 (例如 500, 502, 503, 504)
+        if fault.isdigit() and int(fault) >= 500:
+            status_code = int(fault)
+            return JSONResponse(
+                status_code=status_code,
+                content={
+                    "error": {
+                        "message": f"Injected Fault: Service returned HTTP {status_code} intentionally.",
+                        "type": "chaos_fault_injection",
+                        "param": None,
+                        "code": status_code,
+                    }
+                },
+            )
+        # 2. 模拟未捕获的服务端严重异常, 检验网关与客户端容错/熔断
+        elif fault.lower() in ("exception", "crash", "raise"):
+            raise RuntimeError(
+                "Injected Fault: Simulated unhandled server exception for chaos test."
+            )
+
+    return await call_next(request)
+```
+
+#### 2. `chaos_proxy.py`(网络传输层代理与 TCP 中断)
+
+增强了环境变量读取, 方便动态配置截断阈值:
+
+```python
+import json
+import os
+from aiohttp import ClientSession, ClientTimeout, web
+
+UPSTREAM_VLLM_URL = os.getenv("UPSTREAM_VLLM_URL", "http://127.0.0.1:8000")
+PROXY_PORT = int(os.getenv("PROXY_PORT", "8001"))
+FAIL_AFTER_CHUNKS = int(os.getenv("FAIL_AFTER_CHUNKS", "5"))
+
+
+async def proxy_handler(request: web.Request):
+    target_url = f"{UPSTREAM_VLLM_URL}{request.rel_url}"
+    body = await request.read()
+
+    print("\n" + "=" * 35 + " [Chaos Proxy] 收到下游客户端请求 " + "=" * 35)
+    print(f"URL: {request.method} {request.rel_url} (来自: {request.remote})")
+    print("----- 请求头 (Request Headers) -----")
+    for k, v in request.headers.items():
+        print(f"  {k}: {v}")
+
+    print("----- 请求体 (Request Body) -----")
+    try:
+        body_json = json.loads(body.decode("utf-8"))
+        print(json.dumps(body_json, indent=4, ensure_ascii=False))
+    except Exception:
+        print(body.decode("utf-8", errors="ignore"))
+
+    # 清理逐跳请求头
+    headers = {
+        k: v
+        for k, v in request.headers.items()
+        if k.lower() not in ("host", "content-length", "transfer-encoding")
+    }
+
+    print("=" * 90)
+    print(f"正在将请求转发至上游 vLLM: {target_url} ...")
+
+    timeout = ClientTimeout(total=180)
+    async with ClientSession(timeout=timeout) as session:
+        try:
+            async with session.request(
+                method=request.method,
+                url=target_url,
+                headers=headers,
+                data=body,
+            ) as upstream_resp:
+                print(
+                    "\n"
+                    + "=" * 35
+                    + " [Chaos Proxy] 收到上游 vLLM 响应 "
+                    + "=" * 35
+                )
+                print(f"Status: {upstream_resp.status} {upstream_resp.reason}")
+                print("=" * 90 + "\n")
+
+                downstream_resp = web.StreamResponse(
+                    status=upstream_resp.status,
+                    reason=upstream_resp.reason,
+                    headers=upstream_resp.headers,
+                )
+                await downstream_resp.prepare(request)
+
+                chunk_count = 0
+                async for chunk in upstream_resp.content.iter_any():
+                    chunk_count += 1
+                    raw_text = chunk.decode("utf-8", errors="ignore")
+                    print(
+                        f"[SSE Chunk #{chunk_count}] 大小: {len(chunk)} 字节 | 预览: {raw_text.strip()[:60]}..."
+                    )
+
+                    # 达到指定阈值且属于流式输出时中断
+                    if FAIL_AFTER_CHUNKS > 0 and chunk_count > FAIL_AFTER_CHUNKS:
+                        print(
+                            "\n"
+                            + "!" * 30
+                            + " [传输层故障注入触发] "
+                            + "!" * 30
+                        )
+                        print(
+                            f"⚡ 已转发 {chunk_count - 1} 个 Chunk, 达到阈值! 立即强制斩断 TCP 传输 (TCP Abort/RST)!"
+                        )
+                        print("!" * 80 + "\n")
+                        if request.transport:
+                            request.transport.abort()
+                        return downstream_resp
+
+                    await downstream_resp.write(chunk)
+
+                await downstream_resp.write_eof()
+                return downstream_resp
+
+        except Exception as e:
+            print(f"[Chaos Proxy] 异常: {e}", exc_info=True)
+            raise
+
+
+app = web.Application()
+app.router.add_route("*", "/{path:.*}", proxy_handler)
+
+if __name__ == "__main__":
+    print(
+        f"[Chaos Proxy] 启动中: 监听 0.0.0.0:{PROXY_PORT} -> 转发至 {UPSTREAM_VLLM_URL}"
+    )
+    print(f"[Chaos Proxy] 截断阈值: 每轮流式传输将在第 {FAIL_AFTER_CHUNKS} 个 Chunk 后直接 Reset 连接")
+    web.run_app(app, host="0.0.0.0", port=PROXY_PORT)
+```
+
+#### 3. `entrypoint.sh`(进程生命周期与启动脚本)
+
+```bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
+set -x
+
+# 默认环境变量(支持外部 docker run -e 动态覆盖)
+export MODEL_PATH="${MODEL_PATH:-/model/Qwen2.5-7B-Instruct}"
+export SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-Qwen2.5-7B-Instruct}"
+export FAIL_AFTER_CHUNKS="${FAIL_AFTER_CHUNKS:-5}"
+export PROXY_PORT="${PROXY_PORT:-8001}"
+export UPSTREAM_VLLM_URL="http://127.0.0.1:8000"
+
+echo "=========================================================="
+echo "          Starting vLLM Chaos Injection Cluster           "
+echo "=========================================================="
+echo "Model Path:         ${MODEL_PATH}"
+echo "Served Model Name:  ${SERVED_MODEL_NAME}"
+echo "Fail After Chunks:  ${FAIL_AFTER_CHUNKS}"
+echo "=========================================================="
+
+# 1. 启动 Chaos Proxy 后台进程
+python3 /app/chaos/chaos_proxy.py &
+PROXY_PID=$!
+echo "[Entrypoint] Chaos Proxy started with PID: ${PROXY_PID}"
+
+# 2. 信号处理: 捕获 docker stop (SIGTERM / SIGINT), 确保优雅停止子进程
+cleanup() {
+    echo -e "\n[Entrypoint] Intercepted shutdown signal. Stopping services cleanly..."
+    kill -TERM "${PROXY_PID}" 2>/dev/null || true
+    kill -TERM "${VLLM_PID}" 2>/dev/null || true
+    wait "${VLLM_PID}" 2>/dev/null || true
+    wait "${PROXY_PID}" 2>/dev/null || true
+    echo "[Entrypoint] All processes stopped. Exiting."
+    exit 0
+}
+trap cleanup SIGTERM SIGINT
+
+# 3. 启动 vLLM Serve 引擎进程
+# 如果外部有传参给容器, 直接追加在命令行末尾 ($@)
+vllm serve "${MODEL_PATH}" \
+    --served-model-name "${SERVED_MODEL_NAME}" \
+    --trust-remote-code \
+    --use-tqdm-on-load \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --api-key my_secret_token_123 my_secret_token_456 \
+    --enable-log-requests \
+    --enable-log-outputs \
+    --no-disable-uvicorn-access-log \
+    --uvicorn-log-level debug \
+    --aggregate-engine-logging \
+    --enable-logging-iteration-details \
+    --log-error-stack \
+    --cudagraph-metrics \
+    --kv-cache-metrics \
+    --enable-mfu-metrics \
+    --enable-log-deltas \
+    --enable-prompt-tokens-details \
+    --enable-tokenizer-info-endpoint \
+    --enable-server-load-tracking \
+    --enable-force-include-usage \
+    --shutdown-timeout 30 \
+    --middleware chaos_middleware.chaos_fault_injection_middleware \
+    "$@" &
+
+VLLM_PID=$!
+echo "[Entrypoint] vLLM Server started with PID: ${VLLM_PID}"
+
+# 4. 监听子进程: 任何一个进程异常崩溃, 容器整体退出
+wait -n "${VLLM_PID}" "${PROXY_PID}"
+cleanup
+```
+
+#### 4. `Dockerfile`
+
+```dockerfile
+# 基础镜像
+ARG BASE_IMAGE=vllm/vllm-openai:v0.22.0-cu129-ubuntu2404
+FROM ${BASE_IMAGE}
+
+LABEL maintainer="vLLM Chaos Engineering Team"
+LABEL description="vLLM OpenAI server with Chaos Fault Injection Middleware and Proxy"
+
+# 确保 python 输出无缓冲, 保证实时日志打印
+ENV PYTHONUNBUFFERED=1
+ENV VLLM_LOGGING_LEVEL=DEBUG
+ENV VLLM_DEBUG_LOG_API_SERVER_RESPONSE=TRUE
+ENV TORCH_SHOW_CPP_STACKTRACES=1
+
+# 将中间件目录加入 PYTHONPATH, 便于 vLLM 动态加载
+ENV PYTHONPATH="/app/chaos:${PYTHONPATH}"
+
+# 安装代理所需的依赖 (aiohttp)
+# RUN pip install --no-cache-dir aiohttp
+
+WORKDIR /app/chaos
+
+# 拷贝组件
+COPY chaos_middleware.py /app/chaos/chaos_middleware.py
+COPY chaos_proxy.py /app/chaos/chaos_proxy.py
+COPY entrypoint.sh /app/chaos/entrypoint.sh
+
+# 授权执行权限
+RUN chmod +x /app/chaos/entrypoint.sh
+
+# 暴露端口: 8000 (vLLM 原生/中间件), 8001 (Chaos Proxy 网络截断)
+EXPOSE 8000 8001
+
+ENTRYPOINT ["/app/chaos/entrypoint.sh"]
+```
+
+---
+
+### 三、构建与运行操作步骤
+
+#### 步骤 1: 构建定制镜像
+
+在包含上述 4 个文件的目录下执行构建命令:
+
+```bash
+docker build -t vllm-chaos:v0.22.0 .
+```
+
+#### 步骤 2: 启动容器
+
+运行以下命令启动服务. 权重依然挂载外部宿主机目录 `/data/model`:
+
+```bash
+docker run -d \
+  --gpus '"device=2"' \
+  --name vllm-chaos-server \
+  --security-opt seccomp=unconfined \
+  -v /data/model:/model \
+  -p 0.0.0.0:8090:8000 \
+  -p 0.0.0.0:8091:8001 \
+  -e MODEL_PATH="/model/Qwen2.5-7B-Instruct" \
+  -e SERVED_MODEL_NAME="Qwen2.5-7B-Instruct" \
+  -e FAIL_AFTER_CHUNKS=5 \
+  vllm-chaos:v0.22.0
+```
+
+> 注: 如果需要临时调整中途断开的 Chunk 数量, 可以直接传 `-e FAIL_AFTER_CHUNKS=10`; 如果需要传额外的 vLLM 参数(如 `--max-model-len 4096`), 直接写在命令最后即可.
+>
+
+#### 步骤 3: 查看运行日志
+
+```bash
+docker logs -f vllm-chaos-server
+```
+
+你会看到后台 Proxy 启动, 接着 vLLM 开始加载权重并在 `8000` 端口就绪.
+
+---
+
+### 四、验证故障注入效果
+
+```bash
+
+curl -i -X POST http://127.0.0.1:8090/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [{"role": "user", "content": "ping"}]
+  }'
+
+curl -i -X POST http://127.0.0.1:8090/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -H "X-Chaos-Fault: 503" \
+  -d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [{"role": "user", "content": "ping"}]
+  }'
+
+curl -i -X POST "http://127.0.0.1:8090/v1/chat/completions?chaos_fault=crash" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [{"role": "user", "content": "ping"}]
+  }'
+
+curl -i -X POST http://127.0.0.1:8090/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -H "X-Chaos-Fault: crash" \
+  -d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+
+curl -i -X POST http://127.0.0.1:8091/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [{"role": "user", "content": "ping"}]
+  }'
+
+curl -i -X POST http://127.0.0.1:8091/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -H "X-Chaos-Fault: 503" \
+  -d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [{"role": "user", "content": "ping"}]
+  }'
+
+curl -i -X POST "http://127.0.0.1:8091/v1/chat/completions?chaos_fault=crash" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [{"role": "user", "content": "ping"}]
+  }'
+
+curl -i -X POST http://127.0.0.1:8091/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -H "X-Chaos-Fault: crash" \
+  -d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+
+curl -i -X POST http://127.0.0.1:8091/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "stream": true,
+    "messages": [{"role": "user", "content": "ping"}]
+  }'
+
+curl -i -X POST http://127.0.0.1:8091/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -H "X-Chaos-Fault: 503" \
+  -d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "stream": true,
+    "messages": [{"role": "user", "content": "ping"}]
+  }'
+
+curl -i -X POST "http://127.0.0.1:8091/v1/chat/completions?chaos_fault=crash" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "stream": true,
+    "messages": [{"role": "user", "content": "ping"}]
+  }'
+
+curl -i -X POST http://127.0.0.1:8091/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -H "X-Chaos-Fault: crash" \
+  -d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "stream": true,
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+
+curl -i -X POST http://127.0.0.1:8091/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my_secret_token_123" \
+  -d '{
+    "model": "Qwen2.5-7B-Instruct",
+    "stream": true,
+    "messages": [{"role": "user", "content": "what is redis?"}]
+  }'
+
+
+```
 
 --------------------------------------------------------------------------------------------------
 
