@@ -61,9 +61,11 @@ Q: 假设你是一位精通 LLM 和 vllm 的高级研究人员, 我使用 vllm �
 #### 2. 异步引擎触发 Abort(`AsyncLLMEngine`)
 
 - 在捕获到退出信号后, 服务层会立即调用:
-  ```python
-  await engine.abort(request_id)
-  ```
+
+```python
+await engine.abort(request_id)
+```
+
 - 该请求的 ID 被标记为中止状态, 并迅速同步给底层的 Engine Core.
 
 #### 3. 调度器剔除与迭代级停止(Iteration-level Scheduling)
@@ -89,13 +91,14 @@ Q: 假设你是一位精通 LLM 和 vllm 的高级研究人员, 我使用 vllm �
 * 原因: 如果 Nginx 配置了 `proxy_buffering on;`, 客户端断开后, Nginx 与客户端的连接虽然断了, 但 Nginx 与 vLLM 之间的连接可能依然保持, Nginx 会继续"代为接收"服务端的输出, 导致 vLLM 根本不知道客户端已经离开.
 * 排查与解决:
   在 Nginx / 网关配置中, 针对流式推理接口关闭缓冲:
-  ```nginx
-  proxy_buffering off;
-  proxy_cache off;
-  chunked_transfer_encoding on;
-  # 开启后, 客户端关闭可快速透传给后端
-  proxy_ignore_client_abort off;
-  ```
+
+```nginx
+proxy_buffering off;
+proxy_cache off;
+chunked_transfer_encoding on;
+# 开启后, 客户端关闭可快速透传给后端
+proxy_ignore_client_abort off;
+```
 
 #### 2. 非流式请求(Non-Streaming Request)的处理差异
 
@@ -149,11 +152,12 @@ vllm serve Qwen/Qwen2.5-7B-Instruct \
 
 ### 二、验证操作与数据采集步骤
 
-建议在测试机上打开 3 个终端窗口 协同观察:
+建议在测试机上打开 3 个终端窗口协同观察:
 
 #### [终端 1]硬件与系统监控(观察 GPU 算力)
 
 使用 `nvidia-smi` 以 500ms 的高频采样 GPU 核心利用率(`utilization.gpu`)与显存占用:
+
 ```bash
 nvidia-smi dmon -s u -d 1
 # 或者使用更直观的交互工具:
@@ -163,6 +167,7 @@ nvidia-smi dmon -s u -d 1
 #### [终端 2]服务日志与 Prometheus 指标监控(观察调度状态与 KV Cache)
 
 vLLM 提供了 `/metrics` 接口. 你可以单独用一个监控脚本以 1 秒为周期采集关键指标:
+
 ```bash
 while true; do
   curl -s http://localhost:8000/metrics | grep -E "vllm:num_requests_running|vllm:gpu_cache_usage_factor"
@@ -401,9 +406,10 @@ if __name__ == "__main__":
 * 你的 Python 脚本请求的地址是: `http://172.16.10.51:8090/v1/chat/completions`
 * vLLM 原生监听的端口是: `http://0.0.0.0:8000`
 * vLLM 记录的客户端访问日志:
-  ```bash
-  (APIServer pid=55) INFO: 172.16.65.224:49557 - "POST /v1/chat/completions HTTP/1.1" 200 OK
-  ```
+
+```bash
+(APIServer pid=55) INFO: 172.16.65.224:49557 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+```
 
 #### 2. 为什么导致 Abort 失效?
 
