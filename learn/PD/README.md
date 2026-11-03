@@ -18,7 +18,7 @@ Q: 假设你是一位精通 LLM, 以及精通 vllm 各种特性的高级开发�
 
 这份 Bash 脚本展示了 vLLM 的一个高级特性: 预填充与解码分离(Disaggregated Prefill & Decode, 简称 `P/D 分离`).
 
-在传统的 LLM 推理中, Prefill(吞吐量导向, 计算密集型)和 Decode(延迟导向, 访存密集型)运行在相同的 GPU 实例上, 两者会互相抢占资源, 导致首字延迟(TTFT)和双字间隔时间(ITL)难以同时优化. P/D 分离通过将这两个阶段分配到不同的 GPU 实例上运行, 并通过高速网络(如 NCCL)传输中间生成的 KV Cache, 从而实现更高效的算力匹配.
+在传统的 LLM 推理中, Prefill(吞吐量导向, `计算密集型`)和 Decode(延迟导向, `访存密集型`)运行在相同的 GPU 实例上, 两者会互相抢占资源, 导致首字延迟(TTFT)和双字间隔时间(ITL)难以同时优化. P/D 分离通过将这两个阶段分配到不同的 GPU 实例上运行, 并通过高速网络(如 NCCL)传输中间生成的 KV Cache, 从而实现更高效的算力匹配.
 
 下面是为您精心添加了详细注释的脚本, 以及针对 Bash 语法、设计原因和 vLLM 参数特性的深度剖析.
 
@@ -99,6 +99,7 @@ Q: 假设你是一位精通 LLM, 以及精通 vllm 各种特性的高级开发�
 
 Q: 假设你是一位精通 LLM, 以及精通 vllm 各种特性的高级开发人员, 现在有如下 python 脚本用于运行 vllm P/D 分离的协调代理
 ```python
+# disagg_prefill_proxy_server.py
 ```
 请为这个脚本添加注释, 一是说明为什么要这么写, 二是说明其中一些深层次的原理
 
@@ -208,7 +209,7 @@ Q: 假设你是一位精通 LLM, 以及精通 vllm 各种特性的高级开发�
 
 在将你提供的脚本容器化时, 从底层架构的角度需要重点解决以下 4 个关键问题:
 
-1. GPU 拓扑与隔离: Prefill(计算密集型)和 Decode(显存带宽密集型)需要分别挂载不同的物理卡(例如 GPU 0 和 GPU 1).
+1. GPU 拓扑与隔离: Prefill(`计算密集型`)和 Decode(`显存带宽密集型`)需要分别挂载不同的物理卡(例如 GPU 0 和 GPU 1).
 
 2. NCCL P2P 跨进程通信与共享内存(IPC): 底层传输使用的是 `P2pNcclConnector`, 数据在两个实例间通过 NVLink/PCIe 直连拷贝, 容器必须配置足够的共享内存(`--shm-size`)或直接使用宿主机 IPC(`--ipc=host`), 否则 NCCL 初始化会直接崩溃或死锁.
 
@@ -245,7 +246,7 @@ disagg_docker/
 在原代码基础上补充 `--host` 参数, 并将默认绑定地址改为 `0.0.0.0`, 确保容器端口可以被宿主机映射访问:
 
 ```python
-# disagg_prefill_proxy_server.py
+# disagg_docker/disagg_prefill_proxy_server.py
 ```
 
 ##### (2) 容器启动主入口脚本: `entrypoint.sh`
@@ -253,7 +254,7 @@ disagg_docker/
 负责拉起 Prefill、Decode 与 Proxy, 并正确传递 `SIGTERM` / `SIGINT` 信号实现进程组回收, 保证容器常驻运行:
 
 ```bash
-# entrypoint.sh
+# disagg_docker/entrypoint.sh
 ```
 
 ##### (3) 构建镜像 Dockerfile
@@ -261,6 +262,7 @@ disagg_docker/
 使用你指定的基准镜像 `vllm/vllm-openai:v0.22.0-cu129-ubuntu2404`:
 
 ```dockerfile
+# disagg_docker/Dockerfile
 ```
 
 #### 3. 详细操作步骤
@@ -274,8 +276,11 @@ docker build -t vllm-disagg-demo:v0.22.0 .
 ##### 第二步: 启动容器
 
 > ⚠️ 关键参数说明:
+>
 > - `--gpus '"device=0,1"'`: 必须分配至少两张 GPU 卡.
+>
 > - `--ipc=host`: 必须开启. 确保 NCCL 能够使用宿主机的共享内存进行点对点显存数据交换.
+>
 > - `-v ~/.cache/huggingface:/root/.cache/huggingface`: 挂载宿主机模型缓存, 避免每次启动容器重新下载大模型权重.
 >
 
@@ -299,6 +304,37 @@ docker logs -f vllm-disagg
 ```
 
 当日志输出 `🎉 Cluster is fully operational! Listening on 0.0.0.0:8000` 时, 表明 P 节点、D 节点与 Proxy 均已拉起就绪.
+
+## 实际操作
+
+```bash
+docker build -t vllm-disagg-demo:v0.22.0.16 .
+
+docker run -d \
+  --name vllm-disagg \
+  --gpus '"device=0,1"' \
+  --ipc=host \
+  -p 8000:8000 \
+  -v /data/model/gemma-4-31B-it:/model/gemma-4-31B-it \
+  -e HF_MODEL_NAME="/model/gemma-4-31B-it" \
+  vllm-disagg-demo:v0.22.0.16
+
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "/model/gemma-4-31B-it",
+    "messages": [
+      {
+        "role": "user",
+        "content": "请用一句话解释什么是大语言模型?"
+      }
+    ],
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "stream": true
+  }'
+
+```
 
 ---
 
