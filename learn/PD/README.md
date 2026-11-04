@@ -319,7 +319,7 @@ docker run -d \
   -e HF_MODEL_NAME="/model/gemma-4-31B-it" \
   vllm-disagg-demo:v0.22.0.16
 
-curl -X POST http://localhost:8000/v1/chat/completions \
+curl -N -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "/model/gemma-4-31B-it",
@@ -340,59 +340,157 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 
 ### 方案二: Docker Compose 微服务解耦部署(生产标准模式)
 
-在生产环境中, Prefill 实例与 Decode 实例通常部署在不同的容器中. 两个容器跨进程使用 `P2pNcclConnector` 时, 网络必须互通, 且需要共享 IPC.
+将原有的单容器多进程改造为三个独立容器(Prefill 节点、Decode 节点、Proxy 网关), 是生产环境迈向解耦隔离、独立水平伸缩与容灾的标准演进方案.
 
-#### 1. 准备 Proxy 专用轻量镜像或共用基镜像
+---
 
-我们在宿主机准备好 `disagg_prefill_proxy_server.py`, 直接复用 `docker-compose.yml` 编排.
+### 一、跨容器 P/D 分离的架构原理与关键技术点
 
-#### 2. `docker-compose.yml` 配置
+在进行 Docker Compose 改造前, 必须了解两个底层物理生命线:
 
-使用 `network_mode: "host"` 和 `ipc: "host"`, 这是单机多容器跑 NCCL 吞吐最高、最不容易踩坑的组合:
+1. `ipc: host`(关键, 跨容器 NVLink P2P 通信的前提)
 
-```yaml
-```
+   * 原理: `P2pNcclConnector` 利用 CUDA IPC(进程间通信句柄 `cudaIpcOpenMemHandle`)直接在两张 GPU 的显存之间拷贝 KV Cache.
 
-#### 3. 运行 Docker Compose
+   * 要求: Prefill 与 Decode 两个容器必须显式配置 `ipc: host`, 共享宿主机 IPC 命名空间. 如果缺少该配置, CUDA 将无法打开对端容器的显存句柄, NVLink P2P 将直接失效.
+
+2. 网络模式首选 `network_mode: host`
+
+   * 原理: 单机多卡场景下, `network_mode: host` 绕过了 Docker 虚拟网桥的 NAT 转换与 MTU 限制. Prefill、Decode 和 Proxy 全部绑定在 `127.0.0.1`(回环网卡), NCCL 的控制信令握手时延趋近于零, 且彻底消除了不同容器 IP 漂移导致握手死锁的风险.
+
+3. 利用 Docker Compose 声明式健康检查取代 `wait_for_server`
+
+   * 利用 Compose 原生的 `healthcheck` 探活 `/v1/models`, 并在 Proxy 容器配置 `depends_on: condition: service_healthy`, 优雅保证模型完全就绪后 Proxy 才启动接客.
+
+4. Proxy 容器极简化
+
+   * Proxy 只是一个纯 Python 的异步 HTTP 路由转发服务, 完全不需要 GPU 驱动、CUDA 或 20GB 的 vLLM 大镜像. 采用 `python:3.12-slim` 构建, 镜像大小缩减至 100MB 左右, 秒级拉起.
+
+---
+
+### 二、改造后的代码工程结构
 
 ```bash
-docker compose up -d
-docker compose logs -f proxy-server
+$ tree -a learn/PD/disagg_compose
+learn/PD/disagg_compose
+├── .env                              # 全局环境变量(模型路径、端口等)
+├── docker-compose.yml                 # 编排定义文件
+└── proxy/
+    ├── Dockerfile                     # Proxy 独立轻量级镜像构建文件
+    └── disagg_prefill_proxy_server.py # 代理服务器代码 (支持单机与跨机寻址)
 ```
 
 ---
 
-### 三、验证与测试
+### 三、完整代码与配置文件
 
-当容器成功启动并监听 8000 端口后, 在宿主机或任意能够访问该机器的客户端上执行请求:
+#### 1. `disagg_compose/.env`(环境配置文件)
 
-#### 1. 基础请求测试
+在项目根目录下创建 `.env`:
 
 ```bash
-curl -X POST http://localhost:8000/v1/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
-    "prompt": "San Francisco is a",
-    "max_tokens": 16,
-    "temperature": 0
-  }'
 ```
 
-#### 2. 流式传输(SSE Stream)验证
+---
 
-P/D 分离最大的价值之一在于维持流式生成的平滑低延迟(降低 ITL), 验证流式输出:
+#### 2. `disagg_compose/proxy/Dockerfile`
+
+在 `proxy/` 目录下创建 `Dockerfile`, 仅安装必要网络库, 极大加快构建速度:
+
+```dockerfile
+```
+
+---
+
+#### 3. `disagg_compose/proxy/disagg_prefill_proxy_server.py`
+
+在原代码基础上, 增加了对 `--prefill-kv-host` 和 `--decode-kv-host` 的支持(向前兼容 `--kv-host`), 既能在单机 `127.0.0.1` 下稳定运行, 也能在跨主机部署时分别指定两端的物理 IP. 所有原有的详细注释和日志输出均已完整保留:
+
+```python
+```
+
+---
+
+#### 4. `disagg_compose/docker-compose.yml`
+
+这是三容器编排的核心配置文件. 它将原来 `entrypoint.sh` 里的环境变量和启动参数全部转化为 Docker Compose 标准声明:
+
+```yaml
+```
+
+---
+
+### 四、完整的部署与验证步骤
+
+#### 步骤 1: 准备文件结构
+
+在宿主机的工作目录(例如 `learn/PD/disagg_compose`)下, 按照第二节的目录树创建对应文件.
+
+#### 步骤 2: 一键启动集群
 
 ```bash
-curl -N -X POST http://localhost:8000/v1/completions \
+cd learn/PD/disagg_compose
+
+# 构建 proxy 并拉起三个容器
+docker compose up -d --build
+```
+
+#### 步骤 3: 查看各容器健康状态
+
+使用 `docker compose ps` 监控容器启动:
+
+```bash
+docker compose ps
+```
+
+你会看到:
+
+* `vllm-prefill` 和 `vllm-decode` 状态会首先变成 `starting`;
+
+* 大约 1~2 分钟模型加载并完成 CUDA 图捕获后, 两者的状态会变为 `healthy`;
+
+* 此时 `vllm-proxy` 才会立刻启动并在 `0.0.0.0:8000` 开始接客.
+
+#### 步骤 4: 实时查看追踪日志
+
+```bash
+# 查看所有容器的聚合日志
+docker compose logs -f
+
+# 或者单独查看 Proxy 的调度决策日志
+docker compose logs -f vllm-proxy
+```
+
+#### 步骤 5: 发起推理请求测试
+
+```bash
+curl -N -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
-    "prompt": "The future of AI is",
-    "max_tokens": 30,
+    "model": "/model/gemma-4-31B-it",
+    "messages": [
+      {
+        "role": "user",
+        "content": "请用一句话解释什么是大语言模型?"
+      }
+    ],
+    "max_tokens": 100,
+    "temperature": 0.7,
     "stream": true
   }'
 ```
+
+---
+
+### 五、停止与资源释放
+
+若要停止集群, 执行标准优雅停机命令:
+
+```bash
+docker compose down
+```
+
+Docker Compose 会按逆序优雅通知 `vllm-proxy`、`vllm-decode` 和 `vllm-prefill`, 保证显存和端口被系统完全回收.
 
 ---
 
