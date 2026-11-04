@@ -1,0 +1,205 @@
++ python3 /app/disagg_prefill_proxy_server.py --host 0.0.0.0 --port 8000 --prefill-url http://127.0.0.1:8100 --decode-url http://127.0.0.1:8200 --kv-host 10.41.0.3 --prefill-kv-port 14579 --decode-kv-port 14580
+2026-11-04 02:56:50.525 [INFO] [2944] 📋 成功解析启动参数 (Parsed CLI Arguments):
+2026-11-04 02:56:50.525 [INFO] [2944]   - host               : 0.0.0.0
+2026-11-04 02:56:50.525 [INFO] [2944]   - port               : 8000
+2026-11-04 02:56:50.525 [INFO] [2944]   - timeout            : 3600.0
+2026-11-04 02:56:50.525 [INFO] [2944]   - prefill_url        : http://127.0.0.1:8100
+2026-11-04 02:56:50.525 [INFO] [2944]   - decode_url         : http://127.0.0.1:8200
+2026-11-04 02:56:50.525 [INFO] [2944]   - kv_host            : 10.41.0.3
+2026-11-04 02:56:50.525 [INFO] [2944]   - prefill_kv_port    : 14579
+2026-11-04 02:56:50.525 [INFO] [2944]   - decode_kv_port     : 14580
+2026-11-04 02:56:50.525 [INFO] [2944] ======================================================================
+2026-11-04 02:56:50.525 [INFO] [2944] 🚀 启动 vLLM P/D 分离并发协调代理服务 (Disaggregated Proxy)
+2026-11-04 02:56:50.525 [INFO] [2944]   - 统一网关监听地址           : 0.0.0.0:8000
+2026-11-04 02:56:50.525 [INFO] [2944]   - Prefill 阶段后端 HTTP 接口  : http://127.0.0.1:8100
+2026-11-04 02:56:50.525 [INFO] [2944]   - Decode 阶段后端 HTTP 接口   : http://127.0.0.1:8200
+2026-11-04 02:56:50.525 [INFO] [2944]   - Prefill 物理通讯端点 (ZMQ) : 10.41.0.3:14579
+2026-11-04 02:56:50.525 [INFO] [2944]   - Decode 物理通讯端点 (ZMQ)  : 10.41.0.3:14580
+2026-11-04 02:56:50.525 [INFO] [2944]   - X-KV-Target 目标路由标识    : 127.0.0.1:8200
+2026-11-04 02:56:50.525 [INFO] [2944]   - 后端请求全局超时限制        : 3600.0 秒
+2026-11-04 02:56:50.525 [INFO] [2944] ======================================================================
+2026-11-04 02:56:50.528 [INFO] [2944] 🎬 Quart ASGI 服务已进入事件循环, 监听端口 8000...
+2026-11-04 02:56:50.528 [DEBUG] [2944] Using selector: EpollSelector
+ * Serving Quart app 'disagg_prefill_proxy_server'
+ * Debug mode: False
+ * Please use an ASGI server (e.g. Hypercorn) directly in production
+ * Running on http://0.0.0.0:8000 (CTRL + C to quit)
+2026-11-04 02:56:50.558 [INFO] [2944] Running on http://0.0.0.0:8000 (CTRL + C to quit)
+
+
+2026-11-04 02:56:51.067 [DEBUG] [2944] 🔍 收到模型探活请求 GET /v1/models, 准备穿透请求 Decode: http://127.0.0.1:8200/v1/models
+(APIServer pid=49) INFO:     127.0.0.1:43738 - "GET /v1/models HTTP/1.1" 200 OK
+2026-11-04 02:56:51.069 [DEBUG] [2944] ✅ Decode /v1/models 返回状态: 200, 大小: 476 字节, 耗时: 0.002s
+2026-11-04 02:56:51.070 [INFO] [2944] 127.0.0.1:60528 GET /v1/models 1.1 200 476 4689
+
+
+2026-11-04 02:57:40.900 [DEBUG] [2944] 🌐 [HTTP 入口] 收到路由命中: POST /v1/chat/completions
+2026-11-04 02:57:40.901 [DEBUG] [2944] [Req-360da6df] 🔍 开始捕获客户端请求元数据: POST /v1/chat/completions
+2026-11-04 02:57:40.901 [INFO] [2944] [Req-360da6df] 📥 接收请求 -> 路由: /v1/chat/completions, 模型: /model/gemma-4-31B-it, max_tokens: 100, stream: True, temperature: 0.7, 提示摘要: [Messages(count=1)]
+2026-11-04 02:57:40.901 [DEBUG] [2944] [Req-360da6df] 🛠️ [步骤 1/3] 开始克隆并改写 Prefill 专属 Payload...
+2026-11-04 02:57:40.901 [DEBUG] [2944] [Req-360da6df] 强制将 Prefill 的 stream 参数重写为 False (禁止 SSE 悬挂)
+2026-11-04 02:57:40.901 [DEBUG] [2944] [Req-360da6df] 🛠️ [步骤 2/3] 正在构造 NCCL P2P 物理寻址 Request-ID...
+2026-11-04 02:57:40.901 [DEBUG] [2944] ℹ️ 未检测到 OPENAI_API_KEY 环境变量, 跳过 Authorization 注入
+2026-11-04 02:57:40.902 [DEBUG] [2944] [Req-360da6df] 🔑 生成的 P2P 寻址 Request-ID: ___prefill_addr_10.41.0.3:14579___decode_addr_10.41.0.3:14580_a6bc1131dea64fbebde93e507290b815
+2026-11-04 02:57:40.902 [INFO] [2944] [Req-360da6df] 🚀 [阶段 1] 激活 Prefill 节点计算与 KV 传输...
+2026-11-04 02:57:40.902 [DEBUG] [2944] [Req-360da6df] 协程任务已放入 asyncio 事件循环: TaskID=140580486016704
+2026-11-04 02:57:40.902 [DEBUG] [2944] [Req-360da6df] ⏱️ 正在执行微时差让步 (sleep 0.05s) 以确保 Prefill ZMQ 服务端完成广播...
+2026-11-04 02:57:40.902 [INFO] [2944] [Req-360da6df] ➡️ [Prefill 触发] 发送至 Prefill 节点: http://127.0.0.1:8100/v1/chat/completions
+2026-11-04 02:57:40.902 [DEBUG] [2944] [Req-360da6df] 📦 Prefill 请求参数摘要: max_tokens=1, stream=False, model=/model/gemma-4-31B-it
+2026-11-04 02:57:40.902 [DEBUG] [2944] [Req-360da6df] 🏷️ Prefill 请求专属请求头: X-Request-Id=___prefill_addr_10.41.0.3:14579___decode_addr_10.41.0.3:14580_a6bc1131dea64fbebde93e507290b815, X-KV-Target=127.0.0.1:8200
+2026-11-04 02:57:40.902 [DEBUG] [2944] [Req-360da6df] 🌐 正在初始化 Prefill HTTP ClientSession (Timeout=180s)...
+2026-11-04 02:57:40.902 [DEBUG] [2944] [Req-360da6df] 📤 正在向 Prefill 节点推送 HTTP POST 数据包...
+(APIServer pid=48) INFO 11-04 02:57:40 [logger.py:63] Received request chatcmpl-___prefill_addr_10.41.0.3:14579___decode_addr_10.41.0.3:14580_a6bc1131dea64fbebde93e507290b815: params: SamplingParams(n=1, presence_penalty=0.0, frequency_penalty=0.0, repetition_penalty=1.0, temperature=0.7, top_p=0.95, top_k=64, min_p=0.0, seed=None, stop=[], stop_token_ids=[], bad_words=[], thinking_token_budget=None, include_stop_str_in_output=False, ignore_eos=False, max_tokens=1, min_tokens=0, logprobs=None, prompt_logprobs=None, skip_special_tokens=True, spaces_between_special_tokens=True, structured_outputs=None, extra_args=None), lora_request: None.
+(APIServer pid=48) WARNING 11-04 02:57:40 [input_processor.py:226] VLLM_DISABLE_REQUEST_ID_RANDOMIZATION is set and will be removed in a future release. Duplicate externally-provided request IDs may cause failures and/or subtle correctness errors.
+(APIServer pid=48) INFO 11-04 02:57:40 [async_llm.py:412] Added request chatcmpl-___prefill_addr_10.41.0.3:14579___decode_addr_10.41.0.3:14580_a6bc1131dea64fbebde93e507290b815.
+2026-11-04 02:57:40.953 [DEBUG] [2944] [Req-360da6df] ⏱️ 微时差让步结束, 开始激活 Decode 阶段
+2026-11-04 02:57:40.953 [INFO] [2944] [Req-360da6df] 🚀 [阶段 2] 接入 Decode 节点管道...
+2026-11-04 02:57:40.953 [DEBUG] [2944] [Req-360da6df] 📦 正在封装 Quart Streaming Response...
+2026-11-04 02:57:40.954 [DEBUG] [2944] [Req-360da6df] 🛡️ 已禁用 Quart Response Timeout (response.timeout=None)
+2026-11-04 02:57:40.954 [INFO] [2944] [Req-360da6df] 🔗 双向流水线就绪 (调度层握手耗时: 0.053 秒)
+2026-11-04 02:57:40.954 [DEBUG] [2944] 🌐 [HTTP 出口] 成功生成响应对象: POST /v1/chat/completions (耗时: 0.054s)
+2026-11-04 02:57:40.955 [DEBUG] [2944] [Req-360da6df] 🌊 客户端响应流开始消费 (response_stream iterator activated)
+2026-11-04 02:57:40.955 [INFO] [2944] [Req-360da6df] ➡️ [Decode 接入] 发送至 Decode 节点等待 KV 并流式生成: http://127.0.0.1:8200/v1/chat/completions
+2026-11-04 02:57:40.955 [DEBUG] [2944] [Req-360da6df] 📦 Decode 原始参数摘要: max_tokens=100, stream=True, model=/model/gemma-4-31B-it
+2026-11-04 02:57:40.955 [DEBUG] [2944] [Req-360da6df] 🏷️ Decode 请求携带的 X-Request-Id: ___prefill_addr_10.41.0.3:14579___decode_addr_10.41.0.3:14580_a6bc1131dea64fbebde93e507290b815
+2026-11-04 02:57:40.955 [DEBUG] [2944] [Req-360da6df] 🌐 正在初始化 Decode HTTP ClientSession (Timeout=3600.0s)...
+2026-11-04 02:57:40.955 [DEBUG] [2944] [Req-360da6df] 📤 正在向 Decode 节点发起 HTTP POST 请求...
+(APIServer pid=49) INFO 11-04 02:57:40 [logger.py:63] Received request chatcmpl-___prefill_addr_10.41.0.3:14579___decode_addr_10.41.0.3:14580_a6bc1131dea64fbebde93e507290b815: params: SamplingParams(n=1, presence_penalty=0.0, frequency_penalty=0.0, repetition_penalty=1.0, temperature=0.7, top_p=0.95, top_k=64, min_p=0.0, seed=None, stop=[], stop_token_ids=[], bad_words=[], thinking_token_budget=None, include_stop_str_in_output=False, ignore_eos=False, max_tokens=100, min_tokens=0, logprobs=None, prompt_logprobs=None, skip_special_tokens=True, spaces_between_special_tokens=True, structured_outputs=None, extra_args=None), lora_request: None.
+(APIServer pid=49) INFO:     127.0.0.1:44452 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=49) WARNING 11-04 02:57:41 [input_processor.py:226] VLLM_DISABLE_REQUEST_ID_RANDOMIZATION is set and will be removed in a future release. Duplicate externally-provided request IDs may cause failures and/or subtle correctness errors.
+(APIServer pid=49) INFO 11-04 02:57:41 [async_llm.py:412] Added request chatcmpl-___prefill_addr_10.41.0.3:14579___decode_addr_10.41.0.3:14580_a6bc1131dea64fbebde93e507290b815.
+2026-11-04 02:57:41.056 [DEBUG] [2944] [Req-360da6df] 📥 Decode 节点已响应: HTTP 200, Content-Type: text/event-stream; charset=utf-8
+2026-11-04 02:57:41.057 [INFO] [2944] [Req-360da6df] 🔄 [Decode 连接建立] 开始以流式方式接收 Token...
+(EngineCore pid=916) INFO 11-04 02:57:42 [p2p_nccl_engine.py:52] set_p2p_nccl_context, original_values: {'NCCL_MAX_NCHANNELS': None, 'NCCL_MIN_NCHANNELS': None, 'NCCL_CUMEM_ENABLE': None, 'NCCL_BUFFSIZE': None, 'NCCL_PROTO': None, 'NCCL_ALGO': None}
+(EngineCore pid=923) INFO 11-04 02:57:42 [p2p_nccl_engine.py:52] set_p2p_nccl_context, original_values: {'NCCL_MAX_NCHANNELS': None, 'NCCL_MIN_NCHANNELS': None, 'NCCL_CUMEM_ENABLE': None, 'NCCL_BUFFSIZE': None, 'NCCL_PROTO': None, 'NCCL_ALGO': None}
+(EngineCore pid=916) INFO 11-04 02:57:42 [p2p_nccl_engine.py:226] 🤝ncclCommInitRank Success, 10.41.0.3:14579👉10.41.0.3:14580, MyRank:0
+(EngineCore pid=923) INFO 11-04 02:57:42 [p2p_nccl_engine.py:387] 🤝ncclCommInitRank Success, 10.41.0.3:14580👈10.41.0.3:14579, MyRank:1
+1318c6c5bcb3:916:2335 [0] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+1318c6c5bcb3:916:2335 [0] NCCL INFO NCCL_SOCKET_IFNAME set by environment to eth0
+1318c6c5bcb3:916:2335 [0] NCCL INFO cudaDriverVersion 13020
+1318c6c5bcb3:916:2335 [0] NCCL INFO NCCL version 2.28.9+cuda12.9
+1318c6c5bcb3:916:2335 [0] NCCL INFO NET/Plugin: Could not find: libnccl-net.so
+1318c6c5bcb3:916:2335 [0] NCCL INFO NCCL_IB_DISABLE set by environment to 1.
+1318c6c5bcb3:916:2335 [0] NCCL INFO transport/net_ib.cc:852 -> 3
+1318c6c5bcb3:916:2335 [0] NCCL INFO Failed to initialize NET plugin IB
+1318c6c5bcb3:916:2335 [0] NCCL INFO NCCL_SOCKET_IFNAME set by environment to eth0
+1318c6c5bcb3:916:2335 [0] NCCL INFO NET/Socket : Using [0]eth0:10.41.0.3<0>
+1318c6c5bcb3:916:2335 [0] NCCL INFO Initialized NET plugin Socket
+1318c6c5bcb3:916:2335 [0] NCCL INFO Assigned NET plugin Socket to comm
+1318c6c5bcb3:916:2335 [0] NCCL INFO Using network Socket
+1318c6c5bcb3:916:2335 [0] NCCL INFO ncclCommInitRank comm 0x7ee71802b780 rank 0 nranks 2 cudaDev 0 nvmlDev 0 busId 27000 commId 0xe4e7118903c5b545 - Init START
+1318c6c5bcb3:916:2335 [0] NCCL INFO RAS client listening socket at 127.0.0.1<28028>
+1318c6c5bcb3:916:2335 [0] NCCL INFO NCCL_CUMEM_ENABLE set by environment to 1.
+1318c6c5bcb3:916:2335 [0] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 0 is 0-37,76-113. (GPU affinity = 0-37,76-113 ; CPU affinity = 0-151).
+1318c6c5bcb3:916:2335 [0] NCCL INFO NVLS multicast support is not available on dev 0 (NVLS_NCHANNELS 0)
+1318c6c5bcb3:916:2335 [0] NCCL INFO comm 0x7ee71802b780 rank 0 nRanks 2 nNodes 1 localRanks 2 localRank 0 MNNVL 0
+1318c6c5bcb3:916:2335 [0] NCCL INFO NCCL_MAX_NCHANNELS set by environment to 8.
+1318c6c5bcb3:916:2335 [0] NCCL INFO NCCL_MIN_NCHANNELS set by environment to 8.
+1318c6c5bcb3:916:2335 [0] NCCL INFO Channel 00/08 : 0 1
+1318c6c5bcb3:916:2335 [0] NCCL INFO Channel 01/08 : 0 1
+1318c6c5bcb3:916:2335 [0] NCCL INFO Channel 02/08 : 0 1
+1318c6c5bcb3:916:2335 [0] NCCL INFO Channel 03/08 : 0 1
+1318c6c5bcb3:916:2335 [0] NCCL INFO Channel 04/08 : 0 1
+1318c6c5bcb3:916:2335 [0] NCCL INFO Channel 05/08 : 0 1
+1318c6c5bcb3:916:2335 [0] NCCL INFO Channel 06/08 : 0 1
+1318c6c5bcb3:916:2335 [0] NCCL INFO Channel 07/08 : 0 1
+1318c6c5bcb3:916:2335 [0] NCCL INFO Trees [0] 1/-1/-1->0->-1 [1] 1/-1/-1->0->-1 [2] 1/-1/-1->0->-1 [3] 1/-1/-1->0->-1 [4] 1/-1/-1->0->-1 [5] 1/-1/-1->0->-1 [6] -1/-1/-1->0->1 [7] -1/-1/-1->0->1
+1318c6c5bcb3:916:2335 [0] NCCL INFO P2P Chunksize set to 524288
+1318c6c5bcb3:916:2335 [0] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+1318c6c5bcb3:916:2335 [0] NCCL INFO Check P2P Type isAllDirectP2p 1 directMode 0 isAllCudaP2p 1
+1318c6c5bcb3:916:2977 [0] NCCL INFO [Proxy Service] Device 0 CPU core 11
+1318c6c5bcb3:916:2978 [0] NCCL INFO [Proxy Service UDS] Device 0 CPU core 100
+1318c6c5bcb3:916:2335 [0] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+1318c6c5bcb3:916:2335 [0] NCCL INFO threadThresholds 8/8/64 | 16/8/64 | 512 | 512
+1318c6c5bcb3:916:2335 [0] NCCL INFO 8 coll channels, 8 collnet channels, 0 nvls channels, 8 p2p channels, 8 p2p channels per peer
+1318c6c5bcb3:916:2335 [0] NCCL INFO CC Off, workFifoBytes 1048576
+1318c6c5bcb3:916:2335 [0] NCCL INFO ncclCommInitRank comm 0x7ee71802b780 rank 0 nranks 2 cudaDev 0 nvmlDev 0 busId 27000 commId 0xe4e7118903c5b545 - Init COMPLETE
+1318c6c5bcb3:916:2335 [0] NCCL INFO Init timings - ncclCommInitRank: rank 0 nranks 2 total 0.19 (kernels 0.15, alloc 0.00, bootstrap 0.02, allgathers 0.00, topo 0.01, graphs 0.00, connections 0.01, rest 0.00)
+1318c6c5bcb3:916:2335 [0] NCCL INFO Channel 00/1 : 0[0] -> 1[1] via P2P/CUMEM/read
+1318c6c5bcb3:916:2977 [0] NCCL INFO Allocated shareable buffer 0x7eeb71400000 size 6291456 ipcDesc 0x7edc68008bb0
+1318c6c5bcb3:916:2335 [0] NCCL INFO Channel 01/1 : 0[0] -> 1[1] via P2P/CUMEM/read
+1318c6c5bcb3:916:2977 [0] NCCL INFO Allocated shareable buffer 0x7eeb71a00000 size 6291456 ipcDesc 0x7edc6800a660
+1318c6c5bcb3:916:2335 [0] NCCL INFO Channel 02/1 : 0[0] -> 1[1] via P2P/CUMEM/read
+1318c6c5bcb3:916:2977 [0] NCCL INFO Allocated shareable buffer 0x1318c6c5bcb3:923:2342 [0] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+1318c6c5bcb3:923:2342 [0] NCCL INFO cudaDriverVersion 13020
+1318c6c5bcb3:923:2342 [0] NCCL INFO NCCL_SOCKET_IFNAME set by environment to eth0
+1318c6c5bcb3:923:2342 [0] NCCL INFO NCCL version 2.28.9+cuda12.9
+1318c6c5bcb3:923:2342 [0] NCCL INFO NET/Plugin: Could not find: libnccl-net.so
+1318c6c5bcb3:923:2342 [0] NCCL INFO NCCL_IB_DISABLE set by environment to 1.
+1318c6c5bcb3:923:2342 [0] NCCL INFO transport/net_ib.cc:852 -> 3
+1318c6c5bcb3:923:2342 [0] NCCL INFO Failed to initialize NET plugin IB
+1318c6c5bcb3:923:2342 [0] NCCL INFO NCCL_SOCKET_IFNAME set by environment to eth0
+1318c6c5bcb3:923:2342 [0] NCCL INFO NET/Socket : Using [0]eth0:10.41.0.3<0>
+1318c6c5bcb3:923:2342 [0] NCCL INFO Initialized NET plugin Socket
+1318c6c5bcb3:923:2342 [0] NCCL INFO Assigned NET plugin Socket to comm
+1318c6c5bcb3:923:2342 [0] NCCL INFO Using network Socket
+1318c6c5bcb3:923:2342 [0] NCCL INFO ncclCommInitRank comm 0x7f251c0221b0 rank 1 nranks 2 cudaDev 0 nvmlDev 1 busId 2a000 commId 0xe4e7118903c5b545 - Init START
+1318c6c5bcb3:923:2342 [0] NCCL INFO RAS client listening socket at 127.0.0.1<28028>
+1318c6c5bcb3:923:2342 [0] NCCL INFO NCCL_CUMEM_ENABLE set by environment to 1.
+1318c6c5bcb3:923:2342 [0] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 1 is 0-37,76-113. (GPU affinity = 0-37,76-113 ; CPU affinity = 0-151).
+1318c6c5bcb3:923:2342 [0] NCCL INFO NVLS multicast support is not available on dev 0 (NVLS_NCHANNELS 0)
+1318c6c5bcb3:923:2342 [0] NCCL INFO comm 0x7f251c0221b0 rank 1 nRanks 2 nNodes 1 localRanks 2 localRank 1 MNNVL 0
+1318c6c5bcb3:923:2342 [0] NCCL INFO NCCL_MAX_NCHANNELS set by environment to 8.
+1318c6c5bcb3:923:2342 [0] NCCL INFO NCCL_MIN_NCHANNELS set by environment to 8.
+1318c6c5bcb3:923:2342 [0] NCCL INFO Trees [0] -1/-1/-1->1->0 [1] -1/-1/-1->1->0 [2] -1/-1/-1->1->0 [3] -1/-1/-1->1->0 [4] -1/-1/-1->1->0 [5] -1/-1/-1->1->0 [6] 0/-1/-1->1->-1 [7] 0/-1/-1->1->-1
+1318c6c5bcb3:923:2342 [0] NCCL INFO P2P Chunksize set to 524288
+1318c6c5bcb3:923:2342 [0] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+1318c6c5bcb3:923:2342 [0] NCCL INFO Check P2P Type isAllDirectP2p 1 directMode 0 isAllCudaP2p 1
+1318c6c5bcb3:923:2979 [0] NCCL INFO [Proxy Service] Device 0 CPU core 84
+1318c6c5bcb3:923:2980 [0] NCCL INFO [Proxy Service UDS] Device 0 CPU core 86
+1318c6c5bcb3:923:2342 [0] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+1318c6c5bcb3:923:2342 [0] NCCL INFO threadThresholds 8/8/64 | 16/8/64 | 512 | 512
+1318c6c5bcb3:923:2342 [0] NCCL INFO 8 coll channels, 8 collnet channels, 0 nvls channels, 8 p2p channels, 8 p2p channels per peer
+1318c6c5bcb3:923:2342 [0] NCCL INFO ncclCommInitRank comm 0x7f251c0221b0 rank 1 nranks 2 cudaDev 0 nvmlDev 1 busId 2a000 commId 0xe4e7118903c5b545 - Init COMPLETE
+1318c6c5bcb3:923:2342 [0] NCCL INFO Init timings - ncclCommInitRank: rank 1 nranks 2 total 0.19 (kernels 0.17, alloc 0.00, bootstrap 0.00, allgathers 0.00, topo 0.01, graphs 0.00, connections 0.01, rest 0.00)
+1318c6c5bcb3:923:2979 [0] NCCL INFO Allocated shareable buffer 0x7f29b3400000 size 6291456 ipcDesc 0x7f1a88008bb0
+1318c6c5bcb3:923:2979 [0] NCCL INFO Allocated shareable buffer 0x7f29b3a00000 size 6291456 ipcDesc 0x7f1a8800a660
+1318c6c5bcb3:923:2979 [0] NCCL INFO Allocated shareable buffer 0x7f29be800000 size 6291456 ipcDesc 0x7f1a8800bd70
+1318c6c5bcb3:923:2979 [0] NCCL INFO Allocated shareable buffer 0x7f29bee00000 size 6291456 ipcDesc 0x7f1a8800d780
+1318c6c5bcb3:923:2979 [0] NCCL INFO Allocated shareable buffer 0x7f29bf400000 size 6291456 ipcDesc 0x7f1a8800ef90
+1318c6c5bcb3:923:2979 [0] NCCL INFO Allocated shareable buffer 0x7f29bfa00000 size 6291456 ipcDesc 0x7f1a880107a0
+1318c6c5bcb3:923:2979 [0] NCCL INFO Allocated shareable buffer 0x7f29e9a00000 size 6291456 ipcDesc 0x7f1a88011e70
+1318c6c5bcb3:923:2979 [0] NCCL INFO Allocated shareable buffer 0x7f29ef400000 size 6291456 ipcDesc 0x7f1a88013720
+1318c6c5bcb3:923:2342 [0] NCCL INFO UDS converted handle 0x7edc68008c00 to fd 127 on remote peer 0
+1318c6c5bcb3:923:2342 [0] NCCL INFO Imported s(APIServer pid=48) INFO:     127.0.0.1:53980 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-11-04 02:57:43.233 [DEBUG] [2944] [Req-360da6df] 📥 Prefill 节点返回 HTTP 响应状态码: 200
+2026-11-04 02:57:43.233 [DEBUG] [2944] [Req-360da6df] ⏳ 开始读取 Prefill 完整响应体以确认 KV Cache 推送完毕...
+2026-11-04 02:57:43.234 [INFO] [2944] [Req-360da6df] ⬅️ [Prefill 完成] 耗时: 2.332 秒, 响应体大小: 658 字节, KV 已推送至 Decode
+2026-11-04 02:57:43.288 [INFO] [2944] [Req-360da6df] ⚡ [首 Token 产生] TTFT (首字延迟): 2.333 秒, 首块大小: 643 字节
+2026-11-04 02:57:43.334 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #2, 大小: 313 字节
+2026-11-04 02:57:43.376 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #3, 大小: 313 字节
+2026-11-04 02:57:43.416 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #4, 大小: 316 字节
+2026-11-04 02:57:43.457 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #5, 大小: 313 字节
+2026-11-04 02:57:43.498 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #6, 大小: 310 字节
+2026-11-04 02:57:43.539 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #7, 大小: 310 字节
+2026-11-04 02:57:43.580 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #8, 大小: 313 字节
+2026-11-04 02:57:43.621 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #9, 大小: 313 字节
+2026-11-04 02:57:43.661 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #10, 大小: 313 字节
+2026-11-04 02:57:43.702 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #11, 大小: 310 字节
+2026-11-04 02:57:43.743 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #12, 大小: 313 字节
+2026-11-04 02:57:43.784 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #13, 大小: 313 字节
+2026-11-04 02:57:43.825 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #14, 大小: 313 字节
+2026-11-04 02:57:43.866 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #15, 大小: 310 字节
+2026-11-04 02:57:43.907 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #16, 大小: 313 字节
+2026-11-04 02:57:43.949 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #17, 大小: 313 字节
+2026-11-04 02:57:43.989 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #18, 大小: 313 字节
+2026-11-04 02:57:44.030 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #19, 大小: 313 字节
+2026-11-04 02:57:44.071 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #20, 大小: 310 字节
+2026-11-04 02:57:44.111 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #21, 大小: 313 字节
+2026-11-04 02:57:44.152 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #22, 大小: 313 字节
+2026-11-04 02:57:44.192 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #23, 大小: 310 字节
+2026-11-04 02:57:44.234 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #24, 大小: 313 字节
+2026-11-04 02:57:44.276 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #25, 大小: 310 字节
+2026-11-04 02:57:44.317 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #26, 大小: 313 字节
+2026-11-04 02:57:44.357 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #27, 大小: 310 字节
+2026-11-04 02:57:44.398 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #28, 大小: 313 字节
+2026-11-04 02:57:44.439 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #29, 大小: 310 字节
+2026-11-04 02:57:44.480 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #30, 大小: 310 字节
+2026-11-04 02:57:44.521 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #31, 大小: 313 字节
+2026-11-04 02:57:44.561 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #32, 大小: 310 字节
+2026-11-04 02:57:44.602 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #33, 大小: 313 字节
+2026-11-04 02:57:44.644 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #34, 大小: 310 字节
+2026-11-04 02:57:44.687 [DEBUG] [2944] [Req-360da6df] 📦 接收 Token 流数据块 #35, 大小: 341 字节
+2026-11-04 02:57:44.688 [INFO] [2944] [Req-360da6df] ⬅️ [Decode 传输结束] 成功! 总耗时: 3.733 秒, 数据块: 35, 大小: 11.02 KB, 平均速率: 2.95 KB/s
+2026-11-04 02:57:44.688 [DEBUG] [2944] [Req-360da6df] ✅ 响应流结束, Prefill 任务已正常完毕 (Task Status: Done)
+2026-11-04 02:57:44.689 [INFO] [2944] 127.0.0.1:60530 POST /v1/chat/completions 1.1 200 - 3790078

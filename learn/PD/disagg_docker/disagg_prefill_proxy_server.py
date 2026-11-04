@@ -115,6 +115,19 @@ def parse_args():
 def main():
     args = parse_args()
 
+    # 详细打印所有从命令行/环境变量解析得到的启动参数
+    logger.info("📋 成功解析启动参数 (Parsed CLI Arguments):")
+    for arg_name, arg_val in vars(args).items():
+        logger.info("  - %-18s : %s", arg_name, arg_val)
+    # host: 0.0.0.0
+    # port: 8000
+    # timeout: 3600.0
+    # prefill_url: http://127.0.0.1:8100
+    # decode_url: http://127.0.0.1:8200
+    # kv_host: 10.41.0.3
+    # prefill_kv_port: 14579
+    # decode_kv_port: 14580
+
     # 初始化 aiohttp 全局客户端超时对象 (主要作用于 Decode 阶段的长文本输出)
     AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=args.timeout)
 
@@ -144,6 +157,7 @@ def main():
     logger.info("  - Decode 阶段后端 HTTP 接口   : %s", DECODE_BASE)
     logger.info("  - Prefill 物理通讯端点 (ZMQ) : %s", PREFILL_KV_ADDR)
     logger.info("  - Decode 物理通讯端点 (ZMQ)  : %s", DECODE_KV_ADDR)
+    logger.info("  - X-KV-Target 目标路由标识    : %s", KV_TARGET)
     logger.info("  - 后端请求全局超时限制        : %.1f 秒", args.timeout)
     logger.info("=" * 70)
 
@@ -163,6 +177,9 @@ def main():
         api_key = os.environ.get("OPENAI_API_KEY")
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
+            logger.debug("🔑 下游请求头已注入 Authorization 凭证")
+        else:
+            logger.debug("ℹ️ 未检测到 OPENAI_API_KEY 环境变量, 跳过 Authorization 注入")
         return headers
 
     async def _run_prefill_task(
@@ -186,15 +203,40 @@ def main():
         url = f"{PREFILL_BASE}{request_path}"
         start_ts = time.perf_counter()
         logger.info("[%s] ➡️ [Prefill 触发] 发送至 Prefill 节点: %s", req_tag, url)
+        logger.debug(
+            "[%s] 📦 Prefill 请求参数摘要: max_tokens=%s, stream=%s, model=%s",
+            req_tag,
+            payload.get("max_tokens"),
+            payload.get("stream"),
+            payload.get("model"),
+        )
+        logger.debug(
+            "[%s] 🏷️ Prefill 请求专属请求头: X-Request-Id=%s, X-KV-Target=%s",
+            req_tag,
+            headers.get("X-Request-Id"),
+            headers.get("X-KV-Target"),
+        )
 
         try:
             # 独立短超时 Session: Prefill 仅计算首 Token, 理论耗时极短 (几十毫秒到数秒)
             # 设置 180 秒硬超时, 若发生意外能尽早熔断, 防止连接池耗尽
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=180)
-            ) as session:
+            prefill_timeout = aiohttp.ClientTimeout(total=180)
+            logger.debug(
+                "[%s] 🌐 正在初始化 Prefill HTTP ClientSession (Timeout=180s)...",
+                req_tag,
+            )
+            async with aiohttp.ClientSession(timeout=prefill_timeout) as session:
+                logger.debug(
+                    "[%s] 📤 正在向 Prefill 节点推送 HTTP POST 数据包...", req_tag
+                )
                 async with session.post(url=url, json=payload, headers=headers) as resp:
                     resp_status = resp.status
+                    logger.debug(
+                        "[%s] 📥 Prefill 节点返回 HTTP 响应状态码: %d",
+                        req_tag,
+                        resp_status,
+                    )
+
                     if resp_status != 200:
                         err_text = await resp.text()
                         logger.error(
@@ -206,15 +248,30 @@ def main():
                         return
 
                     # 等待底层彻底推流结束并读取回包
-                    await resp.read()
-                    logger.info(
-                        "[%s] ⬅️ [Prefill 完成] 耗时: %.3f 秒, KV Cache 已入库推至 Decode 显存",
+                    logger.debug(
+                        "[%s] ⏳ 开始读取 Prefill 完整响应体以确认 KV Cache 推送完毕...",
                         req_tag,
-                        time.perf_counter() - start_ts,
                     )
+                    body_bytes = await resp.read()
+                    elapsed = time.perf_counter() - start_ts
+                    logger.info(
+                        "[%s] ⬅️ [Prefill 完成] 耗时: %.3f 秒, 响应体大小: %d 字节, KV 已推送至 Decode",
+                        req_tag,
+                        elapsed,
+                        len(body_bytes),
+                    )
+        except asyncio.TimeoutError:
+            logger.error(
+                "[%s] ❌ [Prefill 超时] 请求耗时超过 180 秒硬超时限制, 可能卡在 NCCL 发送环路中",
+                req_tag,
+            )
+        except aiohttp.ClientConnectorError as exc:
+            logger.error(
+                "[%s] ❌ [Prefill 连接拒绝] 无法连接到 %s, 错误: %s", req_tag, url, exc
+            )
         except Exception as exc:
             # Prefill 失败不中断主流程抛错, 交给 Decode 端去触发兜底策略 (如 fallback 回本地计算)
-            logger.error("[%s] ❌ [Prefill 异常]: %s", req_tag, exc)
+            logger.error("[%s] ❌ [Prefill 异常]: %s", req_tag, exc, exc_info=True)
 
     async def _stream_decode(
         request_path: str,
@@ -240,12 +297,44 @@ def main():
         chunk_count = 0
         total_bytes = 0
 
-        logger.info("[%s] ➡️ [Decode 接入] 发送至 Decode 节点等待 KV 并流式生成: %s", req_tag, url)
+        logger.info(
+            "[%s] ➡️ [Decode 接入] 发送至 Decode 节点等待 KV 并流式生成: %s",
+            req_tag,
+            url,
+        )
+        logger.debug(
+            "[%s] 📦 Decode 原始参数摘要: max_tokens=%s, stream=%s, model=%s",
+            req_tag,
+            payload.get("max_tokens"),
+            payload.get("stream"),
+            payload.get("model"),
+        )
+        logger.debug(
+            "[%s] 🏷️ Decode 请求携带的 X-Request-Id: %s",
+            req_tag,
+            headers.get("X-Request-Id"),
+        )
 
         try:
+            logger.debug(
+                "[%s] 🌐 正在初始化 Decode HTTP ClientSession (Timeout=%.1fs)...",
+                req_tag,
+                args.timeout,
+            )
             async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
+                logger.debug(
+                    "[%s] 📤 正在向 Decode 节点发起 HTTP POST 请求...", req_tag
+                )
                 async with session.post(url=url, json=payload, headers=headers) as resp:
                     resp_status = resp.status
+                    resp_content_type = resp.headers.get("Content-Type", "unknown")
+                    logger.debug(
+                        "[%s] 📥 Decode 节点已响应: HTTP %d, Content-Type: %s",
+                        req_tag,
+                        resp_status,
+                        resp_content_type,
+                    )
+
                     if resp_status != 200:
                         err_text = await resp.text()
                         logger.error(
@@ -259,37 +348,69 @@ def main():
                         ).encode("utf-8")
                         return
 
-                    logger.info("[%s] 🔄 [Decode 连接建立] 状态码: 200, 开始迭代传输 Token...", req_tag)
+                    logger.info(
+                        "[%s] 🔄 [Decode 连接建立] 开始以流式方式接收 Token...", req_tag
+                    )
 
                     # 逐块异步迭代读取二进制流 (1KB 块缓冲, 平衡吞吐与流式首字抖动)
                     async for chunk in resp.content.iter_chunked(1024):
                         if not chunk:
+                            logger.debug("[%s] ⚠️ 收到空的流式数据块, 跳过", req_tag)
                             continue
 
                         now = time.perf_counter()
                         if first_chunk_ts is None:
                             first_chunk_ts = now
+                            ttft = first_chunk_ts - start_ts
                             logger.info(
-                                "[%s] ⚡ [首 Token 产生] TTFT (首字延迟): %.3f 秒",
+                                "[%s] ⚡ [首 Token 产生] TTFT (首字延迟): %.3f 秒, 首块大小: %d 字节",
                                 req_tag,
-                                first_chunk_ts - start_ts,
+                                ttft,
+                                len(chunk),
+                            )
+                        else:
+                            logger.debug(
+                                "[%s] 📦 接收 Token 流数据块 #%d, 大小: %d 字节",
+                                req_tag,
+                                chunk_count + 1,
+                                len(chunk),
                             )
 
                         chunk_count += 1
                         total_bytes += len(chunk)
                         yield chunk
 
+                    total_elapsed = time.perf_counter() - start_ts
                     logger.info(
-                        "[%s] ⬅️ [Decode 传输结束] 成功! 总耗时: %.3f 秒, 数据块: %d, 传输量: %.2f KB",
+                        "[%s] ⬅️ [Decode 传输结束] 成功! 总耗时: %.3f 秒, 数据块: %d, 大小: %.2f KB, 平均速率: %.2f KB/s",
                         req_tag,
-                        time.perf_counter() - start_ts,
+                        total_elapsed,
                         chunk_count,
                         total_bytes / 1024.0,
+                        (
+                            (total_bytes / 1024.0) / total_elapsed
+                            if total_elapsed > 0
+                            else 0.0
+                        ),
                     )
 
+        except asyncio.TimeoutError:
+            logger.error(
+                "[%s] ❌ [Decode 超时] 超过全局超时 %.1f 秒限制", req_tag, args.timeout
+            )
+            yield b'{"error": "Decode backend timeout"}'
+        except aiohttp.ClientConnectorError as exc:
+            logger.error(
+                "[%s] ❌ [Decode 无法连接] 地址: %s, 异常: %s", req_tag, url, exc
+            )
+            yield json.dumps(
+                {"error": f"Decode connection refused: {str(exc)}"}
+            ).encode("utf-8")
         except Exception as exc:
-            logger.error("[%s] ❌ [Decode 连接异常]: %s", req_tag, exc)
-            yield json.dumps({"error": f"Decode connection error: {str(exc)}"}).encode("utf-8")
+            logger.error("[%s] ❌ [Decode 连接异常]: %s", req_tag, exc, exc_info=True)
+            yield json.dumps({"error": f"Decode connection error: {str(exc)}"}).encode(
+                "utf-8"
+            )
 
     async def process_request() -> Response:
         """
@@ -309,6 +430,10 @@ def main():
         # `RuntimeError: Not within a request context` 导致 ASGI 框架彻底崩溃.
         # ======================================================================
         req_path = request.path
+        req_method = request.method
+        logger.debug(
+            "[%s] 🔍 开始捕获客户端请求元数据: %s %s", req_tag, req_method, req_path
+        )
 
         try:
             original_request_data = await request.get_json()
@@ -325,26 +450,45 @@ def main():
         model = original_request_data.get("model", "unknown")
         max_tokens = original_request_data.get("max_tokens", "default")
         stream = original_request_data.get("stream", False)
+        temperature = original_request_data.get("temperature", "default")
+
+        # 提取 Prompt 或 Messages 的简略预览
+        prompt_preview = ""
+        if "prompt" in original_request_data:
+            p = str(original_request_data["prompt"])
+            prompt_preview = (p[:50] + "...") if len(p) > 50 else p
+        elif "messages" in original_request_data:
+            msgs = original_request_data["messages"]
+            prompt_preview = f"Messages(count={len(msgs)})"
 
         logger.info(
-            "[%s] 📥 接收请求 -> 路由: %s, 模型: %s, max_tokens: %s, stream: %s",
+            "[%s] 📥 接收请求 -> 路由: %s, 模型: %s, max_tokens: %s, stream: %s, temperature: %s, 提示摘要: [%s]",
             req_tag,
             req_path,
             model,
             max_tokens,
             stream,
+            temperature,
+            prompt_preview,
         )
 
         # ----------------------------------------------------------------------
         # 步骤 1: 构造 Prefill 专属请求体
         # ----------------------------------------------------------------------
+        logger.debug(
+            "[%s] 🛠️ [步骤 1/3] 开始克隆并改写 Prefill 专属 Payload...", req_tag
+        )
         prefill_request = original_request_data.copy()
         # 强制只让 Prefill 节点算 1 个 Token, 完成 Attention 矩阵计算后立即脱手
         prefill_request["max_tokens"] = 1
         if "max_completion_tokens" in prefill_request:
             prefill_request["max_completion_tokens"] = 1
+            logger.debug("[%s] 强制将 max_completion_tokens 重写为 1", req_tag)
         # [关键]Prefill 必须强制非流式, 确保 HTTP 连接不会因为 SSE 事件流而长期悬挂
         prefill_request["stream"] = False
+        logger.debug(
+            "[%s] 强制将 Prefill 的 stream 参数重写为 False (禁止 SSE 悬挂)", req_tag
+        )
 
         # ----------------------------------------------------------------------
         # 步骤 2: 构造底层 NCCL 拓扑寻址 Request-ID
@@ -353,12 +497,16 @@ def main():
         # vLLM V1 必须配置环境变量 VLLM_DISABLE_REQUEST_ID_RANDOMIZATION=1.
         # 只有该变量开启, 后端引擎才不会自动往外部 ID 后面拼接随机生成的后缀,
         # 保证 Prefill 发送的 Tensor Key 与 Decode 接收的 Tensor Key 完美吻合.
+        logger.debug(
+            "[%s] 🛠️ [步骤 2/3] 正在构造 NCCL P2P 物理寻址 Request-ID...", req_tag
+        )
         unique_token = uuid.uuid4().hex
         full_request_id = (
             f"___prefill_addr_{PREFILL_KV_ADDR}___decode_addr_"
             f"{DECODE_KV_ADDR}_{unique_token}"
         )
         headers = _build_headers(full_request_id)
+        logger.debug("[%s] 🔑 生成的 P2P 寻址 Request-ID: %s", req_tag, full_request_id)
 
         # ----------------------------------------------------------------------
         # 步骤 3: [核心并发流水线机制]打破串行死锁
@@ -379,31 +527,76 @@ def main():
         prefill_task = asyncio.create_task(
             _run_prefill_task(req_path, prefill_request, headers, req_tag)
         )
+        logger.debug(
+            "[%s] 协程任务已放入 asyncio 事件循环: TaskID=%s", req_tag, id(prefill_task)
+        )
 
         # 微秒级异步让步, 消解分布式时序竞争
+        logger.debug(
+            "[%s] ⏱️ 正在执行微时差让步 (sleep 0.05s) 以确保 Prefill ZMQ 服务端完成广播...",
+            req_tag,
+        )
         await asyncio.sleep(0.05)
+        logger.debug("[%s] ⏱️ 微时差让步结束, 开始激活 Decode 阶段", req_tag)
 
         logger.info("[%s] 🚀 [阶段 2] 接入 Decode 节点管道...", req_tag)
+
         async def response_stream():
+            logger.debug(
+                "[%s] 🌊 客户端响应流开始消费 (response_stream iterator activated)",
+                req_tag,
+            )
             try:
                 async for chunk in _stream_decode(
                     req_path, original_request_data, headers, req_tag
                 ):
                     yield chunk
+            except Exception as stream_err:
+                logger.error(
+                    "[%s] 💥 response_stream 迭代异常: %s",
+                    req_tag,
+                    stream_err,
+                    exc_info=True,
+                )
+                raise
             finally:
                 # 客户端断连或流结束时的清理逻辑: 若客户端中途取消, 立即掐死后台的 Prefill 任务释放 GPU
                 if not prefill_task.done():
+                    logger.warning(
+                        "[%s] 🧹 数据推流已结束但 Prefill 任务尚未完成, 正在触发主动取消...",
+                        req_tag,
+                    )
                     prefill_task.cancel()
+                    try:
+                        await prefill_task
+                    except asyncio.CancelledError:
+                        logger.debug("[%s] ✅ Prefill 协程已成功取消", req_tag)
+                    except Exception as clean_err:
+                        logger.error(
+                            "[%s] ⚠️ 取消 Prefill 协程时捕获异常: %s",
+                            req_tag,
+                            clean_err,
+                        )
+                else:
+                    logger.debug(
+                        "[%s] ✅ 响应流结束, Prefill 任务已正常完毕 (Task Status: Done)",
+                        req_tag,
+                    )
 
+        logger.debug("[%s] 📦 正在封装 Quart Streaming Response...", req_tag)
         # 创建 Quart 响应流
         response = await make_response(response_stream())
         # 核心设置: 禁用 ASGI 内部超时切断, 防止长文本大模型自回归慢导致连接被代理切断
         response.timeout = None
+        logger.debug(
+            "[%s] 🛡️ 已禁用 Quart Response Timeout (response.timeout=None)", req_tag
+        )
 
+        elapsed_setup = time.perf_counter() - request_start_time
         logger.info(
             "[%s] 🔗 双向流水线就绪 (调度层握手耗时: %.3f 秒)",
             req_tag,
-            time.perf_counter() - request_start_time,
+            elapsed_setup,
         )
         return response
 
@@ -413,11 +606,22 @@ def main():
     @app.route("/v1/completions", methods=["POST"])
     @app.route("/v1/chat/completions", methods=["POST"])
     async def handle_request():
+        req_start = time.perf_counter()
+        logger.debug("🌐 [HTTP 入口] 收到路由命中: %s %s", request.method, request.path)
         try:
-            return await process_request()
+            resp = await process_request()
+            logger.debug(
+                "🌐 [HTTP 出口] 成功生成响应对象: %s %s (耗时: %.3fs)",
+                request.method,
+                request.path,
+                time.perf_counter() - req_start,
+            )
+            return resp
         except asyncio.CancelledError:
             # 客户端主动断开网络 (如关闭页面或 Ctrl+C)
-            logger.warning("⚠️ 客户端主动中断连接 (Request Cancelled)")
+            logger.warning(
+                "⚠️ 客户端主动中断连接 (Request Cancelled by Client): %s", request.path
+            )
             return Response(b'{"error": "Request cancelled"}', status=503)
         except Exception as exc:
             logger.exception("💥 Proxy 处理异常: %s", str(exc))
@@ -430,15 +634,31 @@ def main():
     # 健康检查与模型列表透传 (直接穿透给 Decode 节点)
     @app.route("/v1/models", methods=["GET"])
     async def handle_models():
+        target_url = f"{DECODE_BASE}/v1/models"
+        logger.debug(
+            "🔍 收到模型探活请求 GET /v1/models, 准备穿透请求 Decode: %s", target_url
+        )
+        start_ts = time.perf_counter()
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(f"{DECODE_BASE}/v1/models") as resp:
+                async with session.get(target_url) as resp:
                     data = await resp.read()
-                    return Response(data, status=resp.status, content_type="application/json")
+                    elapsed = time.perf_counter() - start_ts
+                    logger.debug(
+                        "✅ Decode /v1/models 返回状态: %d, 大小: %d 字节, 耗时: %.3fs",
+                        resp.status,
+                        len(data),
+                        elapsed,
+                    )
+                    return Response(
+                        data, status=resp.status, content_type="application/json"
+                    )
         except Exception as e:
+            logger.error("❌ 转发 /v1/models 请求失败: %s", e)
             return Response(json.dumps({"error": str(e)}), status=500)
 
     # 启动 ASGI 服务
+    logger.info("🎬 Quart ASGI 服务已进入事件循环, 监听端口 %d...", args.port)
     app.run(host=args.host, port=args.port)
 
 
