@@ -516,241 +516,311 @@ Docker Compose 会按逆序优雅通知 `vllm-proxy`、`vllm-decode` 和 `vllm-p
 Q: 上面给出了两种方案来实现在容器中部署和测试 PD 分离功能,
 - 方案一(推荐首选): 单容器一体化运行(All-in-One 模式). 最适合单机双卡快速验证、压测与原汁原味复现原 Bash 行为, 部署成本最低.
 - 方案二(生产演进): Docker Compose 微服务解耦模式. 将 Prefill、Decode、Proxy 拆分为 3 个独立容器, 还原真实的分布式微服务编排.
-我想使用启动三个容器来实现该功能, 主要是我的环境有限制, 目前不能使用 docker compose, 请实现使用三个容器实现部署和测试 PD 分离功能, 请输出详细的代码, 输出详细的操作步骤
-
-在不能使用 Docker Compose 的受限环境下, 使用原生的 `docker run` 命令分别拉起 Prefill 容器、Decode 容器 和 Proxy 容器 3 个独立容器, 是完全可行且更贴近底层生产排障的方案.
-
-下面为你提供一套标准、高可靠的 3 容器独立部署方案, 包含所有代码、启动参数剖析以及一键管理脚本.
-
----
-
-### 一、3 容器部署的底层核心要素
-
-在单机通过 3 个独立容器运行 P/D 分离时, 必须满足以下两个底层要求:
-
-1. `--ipc=host`(共享内存与 CUDA IPC):
-   Prefill 节点向 Decode 节点传输 KV Cache 使用的是 `P2pNcclConnector`. 底层依赖 NVLink/PCIe 的 CUDA IPC(进程间显存句柄传递). 如果两个容器处于隔离的 IPC Namespace, CUDA IPC 会直接崩溃报错. 因此, Prefill 和 Decode 容器必须显式声明 `--ipc=host`.
-
-2. `--network=host`(主机网络栈直通):
-   避免 Docker Bridge 虚拟网桥带来的 NAT 转发与 NCCL 网络接口探测异常, 3 个容器全部使用 `--network=host`, 端口行为和内部 IP 寻址(`127.0.0.1`)与你在宿主机上直接执行脚本完全一致, 效率最高、零损耗.
-
----
-
-### 二、项目文件结构准备
-
-建议在宿主机上创建一个专门的工作目录:
+对于方案二(生产演进): Docker Compose 微服务解耦模式, 详细的代码如下所示:
 
 ```bash
-mkdir -p ~/vllm-disagg-3containers && cd ~/vllm-disagg-3containers
+$ tree -a ./learn/PD/disagg_compose
+./learn/PD/disagg_compose
+├── .env
+├── docker-compose.yml
+├── proxy
+│   ├── Dockerfile
+│   └── disagg_prefill_proxy_server.py
+└── start.sh
+
+2 directories, 5 files
+$
 ```
 
-目录结构如下:
+各文件具体内容如下所示:
+
+`./learn/PD/disagg_compose/.env`
+```
+```
+
+`./learn/PD/disagg_compose/docker-compose.yml`
+```
+```
+
+`./learn/PD/disagg_compose/proxy/Dockerfile`
+```
+```
+
+`./learn/PD/disagg_compose/proxy/disagg_prefill_proxy_server.py`
+```
+```
+
+`./learn/PD/disagg_compose/start.sh`
+```
+```
+我想手动启动三个容器实现上述功能, 不使用 docker compose 进行编排, 请输出详细的代码, 输出详细的操作步骤.
+
+将 Docker Compose 转换为纯原生 `docker run` 手动启动, 核心是将 Compose 文件中的配置指令(如 `ipc: host`、`network_mode: host`、GPU 权限分配、环境变量、卷挂载等)一一映射为 Docker CLI 参数.
+
+为了保证换机通用性与高可靠性, 整个手动部署流程分为 6 个详细步骤.
+
+---
+
+### 一、关键映射参数对照表
+
+| Docker Compose 指令             | 原生 Docker CLI 参数          | 作用与避坑说明                                                            |
+| :------------------------------ | :---------------------------- | :------------------------------------------------------------------------ |
+| `network_mode: host`            | `--net=host`                  | 直通宿主机网络, 消除跨容器 NAT 损耗, 走物理 IP 握手                       |
+| `ipc: host`                     | `--ipc=host`                  | 必须开启, 允许跨容器进行 CUDA IPC 显存共享与 NVLink P2P 传输              |
+| `device_ids: ['0', '1']`        | `--gpus '"device=0,1"'`       | 两张卡必须对两个容器同时可见, 防止 CUDA 报错 101 `invalid device ordinal` |
+| 环境变量 `CUDA_VISIBLE_DEVICES` | `-e CUDA_VISIBLE_DEVICES=0/1` | 容器内进程逻辑独占对应的物理卡                                            |
+| 覆盖 ENTRYPOINT                 | `--entrypoint /bin/bash`      | 覆盖镜像内置入口, 防止 `vllm serve` 参数拼接冲突                          |
+
+---
+
+### 二、详细手动操作步骤
+
+#### 步骤 0: 进入工作目录并定义环境变量
+
+在执行命令前, 通过 Shell 变量自动探测当前机器的物理 IP, 确保换机零修改:
 
 ```bash
-~/vllm-disagg-3containers/
-├── disagg_prefill_proxy_server.py   # 改造后的代理服务源码
-├── Dockerfile.proxy                 # Proxy 专用轻量构建文件
-├── start.sh                         # 一键按序启动与健康检查脚本
-└── stop.sh                          # 一键停止与资源释放脚本
+cd ./learn/PD/vllm-disagg-3containers
+
+# 1. 基础路径与镜像名配置 (按需调整路径)
+export HOST_MODEL_PATH="/data/model/gemma-4-31B-it"
+export CONTAINER_MODEL_PATH="/model/gemma-4-31B-it"
+export IMAGE_NAME="vllm-disagg-proxy:latest"
+
+# 2. 自动精准获取走默认路由的宿主机物理 IP
+export HOST_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
+if [ -z "$HOST_IP" ]; then
+    export HOST_IP=$(hostname -I | awk '{print $1}')
+fi
+echo "===> 检测到当前宿主机物理通信 IP: ${HOST_IP} <==="
+
 ```
 
 ---
 
-### 三、完整源码与配置文件
+#### 步骤 1: 手动构建统一镜像
 
-#### 1. 改造后的代理服务器代码: `disagg_prefill_proxy_server.py`
+由于 `./vllm-disagg-3containers/Dockerfile` 中安装了 `quart`、`aiohttp`、`msgpack`, 且继承自官方镜像, 三个容器统一使用该镜像即可:
 
-将原脚本中默认绑定的 `127.0.0.1` 增加 `--host` 参数并默认设为 `0.0.0.0`, 同时增强日志输出:
-
-```python
-# disagg_prefill_proxy_server.py
-```
-
-#### 2. Proxy 容器专用 Dockerfile: `Dockerfile.proxy`
-
-Proxy 仅负责 HTTP 协调, 不需要庞大的 CUDA 镜像, 使用官方微型 Python 镜像即可:
-
-```dockerfile
+```bash
+docker build -t ${IMAGE_NAME} -f Dockerfile ./
 ```
 
 ---
 
-### 四、详细手动分步操作指南
+#### 步骤 2: 手动启动 Prefill 容器 (独占 GPU 0)
 
-#### 步骤 1: 构建 Proxy 镜像
-
-```bash
-docker build -f Dockerfile.proxy -t disagg-proxy:v1 .
-```
-
-#### 步骤 2: 启动容器 1 -- Prefill 实例 (KV Producer)
-
-- 指定 `--gpus '"device=0"'` 绑定 GPU 0.
-- 指定 `--ipc=host` 与宿主机共享 IPC 内存.
-- 指定 `--network=host` 直接监听宿主机的 8100(API)与 14579(KV 传输口).
-- 挂载宿主机模型缓存目录 `~/.cache/huggingface`.
+执行以下命令后台启动 Prefill 实例:
 
 ```bash
 docker run -d \
-  --name vllm-prefill-node \
-  --gpus '"device=0"' \
+  --name vllm-prefill \
+  --restart unless-stopped \
   --ipc=host \
-  --network=host \
-  -v ~/.cache/huggingface:/root/.cache/huggingface \
-  -e HF_TOKEN="${HF_TOKEN:-}" \
-  vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 \
-  --model "${MODEL_NAME:-meta-llama/Meta-Llama-3.1-8B-Instruct}" \
-  --host 0.0.0.0 \
-  --port 8100 \
-  --max-model-len 100 \
-  --gpu-memory-utilization 0.8 \
-  --trust-remote-code \
-  --kv-transfer-config '{"kv_connector":"P2pNcclConnector","kv_role":"kv_producer","kv_rank":0,"kv_parallel_size":2,"kv_buffer_size":"1e9","kv_port":"14579","kv_connector_extra_config":{"proxy_ip":"127.0.0.1","proxy_port":"30001","http_ip":"127.0.0.1","http_port":"8100","send_type":"PUT_ASYNC"}}'
+  --net=host \
+  --gpus '"device=0,1"' \
+  -e MODEL_NAME="${CONTAINER_MODEL_PATH}" \
+  -e CUDA_VISIBLE_DEVICES=0 \
+  -e VLLM_DISABLE_REQUEST_ID_RANDOMIZATION=1 \
+  -e VLLM_LOGGING_LEVEL=INFO \
+  -e NCCL_DEBUG=INFO \
+  -e NCCL_DEBUG_SUBSYS=INIT,P2P,ENV \
+  -e NCCL_IB_DISABLE=1 \
+  -e NCCL_P2P_DISABLE=0 \
+  -e NCCL_SHM_DISABLE=0 \
+  -e CUDA_DEVICE_ORDER=PCI_BUS_ID \
+  -e NCCL_NET_GDR_LEVEL=0 \
+  -v "${HOST_MODEL_PATH}:${CONTAINER_MODEL_PATH}:ro" \
+  --entrypoint /bin/bash \
+  "${IMAGE_NAME}" \
+  -c "vllm serve \"\$MODEL_NAME\" \
+      --trust-remote-code \
+      --use-tqdm-on-load \
+      --host 0.0.0.0 \
+      --port 8100 \
+      --gpu-memory-utilization 0.88 \
+      --max-model-len 2048 \
+      --max-num-batched-tokens 8192 \
+      --enable-log-requests \
+      --kv-transfer-config '{
+          \"kv_connector\": \"P2pNcclConnector\",
+          \"kv_role\": \"kv_producer\",
+          \"kv_rank\": 0,
+          \"kv_parallel_size\": 2,
+          \"kv_ip\": \"${HOST_IP}\",
+          \"kv_port\": 14579,
+          \"kv_buffer_size\": \"2e9\",
+          \"kv_connector_extra_config\": {
+              \"send_type\": \"PUT_ASYNC\",
+              \"nccl_num_channels\": \"8\"
+          }
+      }'"
 ```
 
-#### 步骤 3: 启动容器 2 -- Decode 实例 (KV Consumer)
+---
 
-- 指定 `--gpus '"device=1"'` 绑定 GPU 1.
-- 同样开启 `--ipc=host` 与 `--network=host`.
-- 监听宿主机的 8200(API)与 14580(KV 传输口).
+#### 步骤 3: 手动启动 Decode 容器 (独占 GPU 1)
+
+执行以下命令后台启动 Decode 实例:
 
 ```bash
 docker run -d \
-  --name vllm-decode-node \
-  --gpus '"device=1"' \
+  --name vllm-decode \
+  --restart unless-stopped \
   --ipc=host \
-  --network=host \
-  -v ~/.cache/huggingface:/root/.cache/huggingface \
-  -e HF_TOKEN="${HF_TOKEN:-}" \
-  vllm/vllm-openai:v0.22.0-cu129-ubuntu2404 \
-  --model "${MODEL_NAME:-meta-llama/Meta-Llama-3.1-8B-Instruct}" \
-  --host 0.0.0.0 \
-  --port 8200 \
-  --max-model-len 100 \
-  --gpu-memory-utilization 0.8 \
-  --trust-remote-code \
-  --kv-transfer-config '{"kv_connector":"P2pNcclConnector","kv_role":"kv_consumer","kv_rank":1,"kv_parallel_size":2,"kv_buffer_size":"1e10","kv_port":"14580","kv_connector_extra_config":{"proxy_ip":"127.0.0.1","proxy_port":"30001","http_ip":"127.0.0.1","http_port":"8200","send_type":"PUT_ASYNC"}}'
+  --net=host \
+  --gpus '"device=0,1"' \
+  -e MODEL_NAME="${CONTAINER_MODEL_PATH}" \
+  -e CUDA_VISIBLE_DEVICES=1 \
+  -e VLLM_DISABLE_REQUEST_ID_RANDOMIZATION=1 \
+  -e VLLM_LOGGING_LEVEL=INFO \
+  -e NCCL_DEBUG=INFO \
+  -e NCCL_DEBUG_SUBSYS=INIT,P2P,ENV \
+  -e NCCL_IB_DISABLE=1 \
+  -e NCCL_P2P_DISABLE=0 \
+  -e NCCL_SHM_DISABLE=0 \
+  -e CUDA_DEVICE_ORDER=PCI_BUS_ID \
+  -e NCCL_NET_GDR_LEVEL=0 \
+  -v "${HOST_MODEL_PATH}:${CONTAINER_MODEL_PATH}:ro" \
+  --entrypoint /bin/bash \
+  "${IMAGE_NAME}" \
+  -c "vllm serve \"\$MODEL_NAME\" \
+      --trust-remote-code \
+      --use-tqdm-on-load \
+      --host 0.0.0.0 \
+      --port 8200 \
+      --gpu-memory-utilization 0.88 \
+      --max-model-len 2048 \
+      --max-num-batched-tokens 8192 \
+      --enable-log-requests \
+      --kv-transfer-config '{
+          \"kv_connector\": \"P2pNcclConnector\",
+          \"kv_role\": \"kv_consumer\",
+          \"kv_rank\": 1,
+          \"kv_parallel_size\": 2,
+          \"kv_ip\": \"${HOST_IP}\",
+          \"kv_port\": 14580,
+          \"kv_buffer_size\": \"4e9\",
+          \"kv_connector_extra_config\": {
+              \"send_type\": \"PUT_ASYNC\",
+              \"nccl_num_channels\": \"8\"
+          }
+      }'"
 ```
 
-#### 步骤 4: 确认前置两节点健康状态
+---
 
-在大模型权重加载完毕前, 切勿提前启动代理服务器. 执行轮询检查:
+#### 步骤 4: 健康检查等待(替代 Compose 的 `condition: service_healthy`)
+
+模型加载、`torch.compile` 和 CUDA 图捕获需要 2~3 分钟. 在启动 Proxy 之前, 必须在终端执行以下脚本轮询等待 8100 和 8200 端口完全就绪:
 
 ```bash
-# 等待 8100 端口可用
-until curl -s http://127.0.0.1:8100/v1/models > /dev/null 2>&1; do
-    echo "Waiting for Prefill node (8100) to initialize..."
-    sleep 2
-done
-echo "✅ Prefill node is ready!"
+echo "正在等待 Prefill (8100) 和 Decode (8200) 服务就绪..."
 
-# 等待 8200 端口可用
-until curl -s http://127.0.0.1:8200/v1/models > /dev/null 2>&1; do
-    echo "Waiting for Decode node (8200) to initialize..."
-    sleep 2
+# 等待 Prefill 就绪
+until curl -s -f http://127.0.0.1:8100/v1/models >/dev/null 2>&1; do
+    echo "等待 Prefill 节点初始化模型权重... (sleep 5s)"
+    sleep 5
 done
-echo "✅ Decode node is ready!"
+echo "✅ Prefill 节点 (8100) 已就绪!"
+
+# 等待 Decode 就绪
+until curl -s -f http://127.0.0.1:8200/v1/models >/dev/null 2>&1; do
+    echo "等待 Decode 节点初始化模型权重... (sleep 5s)"
+    sleep 5
+done
+echo "✅ Decode 节点 (8200) 已就绪!"
+
 ```
 
-#### 步骤 5: 启动容器 3 -- Proxy 调度代理容器
+---
+
+#### 步骤 5: 手动启动 Proxy 代理容器 (纯 CPU 运行)
+
+确认前后端均就绪后, 启动轻量调度代理:
 
 ```bash
 docker run -d \
-  --name vllm-proxy-node \
-  --network=host \
-  disagg-proxy:v1 \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --prefill-url http://127.0.0.1:8100 \
-  --decode-url http://127.0.0.1:8200 \
-  --kv-host 127.0.0.1 \
-  --prefill-kv-port 14579 \
-  --decode-kv-port 14580
+  --name vllm-proxy \
+  --restart unless-stopped \
+  --net=host \
+  --entrypoint python3 \
+  "${IMAGE_NAME}" \
+  /app/disagg_prefill_proxy_server.py \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --prefill-url http://127.0.0.1:8100 \
+    --decode-url http://127.0.0.1:8200 \
+    --kv-host "${HOST_IP}" \
+    --prefill-kv-port 14579 \
+    --decode-kv-port 14580
 ```
 
 ---
 
-### 五、自动化运维脚本(提升效率)
+### 三、验证与排查
 
-为了避免每次手动输入冗长指令, 编写 `start.sh` 和 `stop.sh` 脚本进行一键管理.
-
-#### 1. 启动脚本: `start.sh`
+#### 1. 查看容器运行状态
 
 ```bash
-# start.sh
+docker ps --filter "name=vllm-"
 ```
 
-#### 2. 销毁脚本: `stop.sh`
+正常情况下会看到 `vllm-prefill`、`vllm-decode`、`vllm-proxy` 三个容器均处于 `Up` 状态.
+
+#### 2. 检查 Proxy 解析到的物理通讯端点
 
 ```bash
-# stop.sh
+docker logs vllm-proxy | grep "物理通讯端点"
 ```
 
-赋予执行权限:
+应当看到预期的物理 IP:
 
 ```bash
-chmod +x start.sh stop.sh
+  - Prefill 物理通讯端点 (ZMQ) : 172.16.21.3:14579
+  - Decode 物理通讯端点 (ZMQ)  : 172.16.21.3:14580
 ```
 
----
-
-### 六、验证与测试
-
-启动集群:
+#### 3. 发送推理请求测试
 
 ```bash
-./start.sh
-```
-
-#### 1. 发送标准测试请求
-
-向 `http://localhost:8000/v1/completions` 发起推理请求:
-
-```bash
-curl -X POST http://localhost:8000/v1/completions \
+curl -N -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
-    "prompt": "San Francisco is a",
-    "max_tokens": 15,
-    "temperature": 0
+    "model": "/model/gemma-4-31B-it",
+    "messages": [
+      {
+        "role": "user",
+        "content": "请用一句话解释什么是大语言模型?"
+      }
+    ],
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "stream": true
   }'
 ```
 
-#### 2. 观察控制面与数据流日志
+---
 
-开 3 个终端分别追踪 3 个容器的实时输出, 验证数据流动过程:
+### 四、快速停止与清理命令
 
-- 终端 1(查看 Proxy 路由):
-
-```bash
-docker logs -f vllm-proxy-node
-# 会观察到: 先执行 [prefill] req_id=..., 接着进入 decode 阶段
-```
-
-- 终端 2(Prefill 节点):
+如果需要停止集群释放两张显卡资源:
 
 ```bash
-docker logs -f vllm-prefill-node
-# 会观察到请求进入, 仅执行 1 token prefill, 并通过 P2pNcclConnector 发送完成
+# 停止并删除三个容器
+docker stop vllm-proxy vllm-decode vllm-prefill
+docker rm vllm-proxy vllm-decode vllm-prefill
+
 ```
 
-- 终端 3(Decode 节点):
+---
+
+### 五、(可选) 一键式手动拉起脚本: `manual_run.sh`
+
+如果你希望将上述手动步骤整合成一个无需 Docker Compose 的自动化 Bash 脚本, 可以在目录下创建 `manual_run.sh`:
 
 ```bash
-docker logs -f vllm-decode-node
-# 会观察到底层 NCCL 接收到来自 14579 的 KV Cache 内存块, 并无缝完成后续自回归解码
 ```
-
-#### 3. 停止所有容器
-
-测试完毕后执行:
-
-```bash
-./stop.sh
-```
-
-------------------------------------------------------------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------------------------------------------------------------
 
