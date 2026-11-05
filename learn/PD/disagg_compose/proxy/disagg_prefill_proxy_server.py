@@ -156,7 +156,7 @@ def main():
     # "kv_ip" 及 "kv_port" 严格一致.
     # ==========================================================================
 
-    # 如果没配或者配了 auto，自动探测
+    # 如果没配或者配了 auto, 自动探测
     detected_host = (
         args.kv_host
         if (args.kv_host and args.kv_host != "auto")
