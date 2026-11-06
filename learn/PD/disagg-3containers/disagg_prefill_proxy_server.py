@@ -142,13 +142,26 @@ def main():
     logger.info("📋 成功解析启动参数 (Parsed CLI Arguments):")
     for arg_name, arg_val in vars(args).items():
         logger.info("  - %-18s : %s", arg_name, arg_val)
+    """
+    📋 成功解析启动参数 (Parsed CLI Arguments):
+    host               : 0.0.0.0
+    port               : 8000
+    timeout            : 3600.0
+    prefill_url        : http://127.0.0.1:8100
+    decode_url         : http://127.0.0.1:8200
+    kv_host            : 172.16.21.3
+    prefill_kv_host    : None
+    decode_kv_host     : None
+    prefill_kv_port    : 14579
+    decode_kv_port     : 14580
+    """
 
     # 初始化 aiohttp 全局客户端超时对象 (主要作用于 Decode 阶段的长文本输出)
     AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=args.timeout)
 
     # 规范化后端 URL, 去除末尾斜杠, 防止与请求子路径拼接产生双斜杠导致 404
-    PREFILL_BASE = args.prefill_url.rstrip("/")
-    DECODE_BASE = args.decode_url.rstrip("/")
+    PREFILL_BASE = args.prefill_url.rstrip("/")  # http://127.0.0.1:8100
+    DECODE_BASE = args.decode_url.rstrip("/")  # http://127.0.0.1:8200
 
     # ==========================================================================
     # [核心避坑要点 1: 通信套接字物理寻址对齐]
@@ -161,18 +174,18 @@ def main():
         args.kv_host
         if (args.kv_host and args.kv_host != "auto")
         else get_default_host_ip()
-    )
-    prefill_host = args.prefill_kv_host or detected_host
-    decode_host = args.decode_kv_host or detected_host
+    )  # 172.16.21.3
+    prefill_host = args.prefill_kv_host or detected_host  # 172.16.21.3
+    decode_host = args.decode_kv_host or detected_host  # 172.16.21.3
 
-    PREFILL_KV_ADDR = f"{prefill_host}:{args.prefill_kv_port}"
-    DECODE_KV_ADDR = f"{decode_host}:{args.decode_kv_port}"
+    PREFILL_KV_ADDR = f"{prefill_host}:{args.prefill_kv_port}"  # 172.16.21.3:14579
+    DECODE_KV_ADDR = f"{decode_host}:{args.decode_kv_port}"  # 172.16.21.3:14580
 
     parsed_decode = urlparse(DECODE_BASE)
     kv_target_port = parsed_decode.port or (
         80 if parsed_decode.scheme == "http" else 443
-    )
-    KV_TARGET = f"{parsed_decode.hostname or '127.0.0.1'}:{kv_target_port}"
+    )  # 8200
+    KV_TARGET = f"{parsed_decode.hostname or '127.0.0.1'}:{kv_target_port}"  # http://127.0.0.1:8200
 
     logger.info("=" * 70)
     logger.info("🚀 启动 vLLM P/D 分离并发协调代理服务 (Disaggregated Proxy)")
@@ -184,6 +197,18 @@ def main():
     logger.info("  - X-KV-Target 目标路由标识    : %s", KV_TARGET)
     logger.info("  - 后端请求全局超时限制        : %.1f 秒", args.timeout)
     logger.info("=" * 70)
+    """
+    ======================================================================
+    🚀 启动 vLLM P/D 分离并发协调代理服务 (Disaggregated Proxy)
+    - 统一网关监听地址           : 0.0.0.0:8000
+    - Prefill 阶段后端 HTTP 接口  : http://127.0.0.1:8100
+    - Decode 阶段后端 HTTP 接口   : http://127.0.0.1:8200
+    - Prefill 物理通讯端点 (ZMQ) : 172.16.21.3:14579
+    - Decode 物理通讯端点 (ZMQ)  : 172.16.21.3:14580
+    - X-KV-Target 目标路由标识    : 127.0.0.1:8200
+    - 后端请求全局超时限制        : 3600.0 秒
+    ======================================================================
+    """
 
     # 实例化 Quart 应用 (支持完全非阻塞的协程流式转发, 兼具 Flask 的轻量语法)
     app = Quart(__name__)
@@ -227,6 +252,8 @@ def main():
         url = f"{PREFILL_BASE}{request_path}"
         start_ts = time.perf_counter()
         logger.info("[%s] ➡️ [Prefill 触发] 发送至 Prefill 节点: %s", req_tag, url)
+        # [Req-61902d02] ➡️ [Prefill 触发] 发送至 Prefill 节点: http://127.0.0.1:8100/v1/chat/completions
+
         logger.debug(
             "[%s] 📦 Prefill 请求参数摘要: max_tokens=%s, stream=%s, model=%s",
             req_tag,
@@ -234,12 +261,15 @@ def main():
             payload.get("stream"),
             payload.get("model"),
         )
+        # [Req-61902d02] 📦 Prefill 请求参数摘要: max_tokens=1, stream=False, model=/model/gemma-4-31B-it
+
         logger.debug(
             "[%s] 🏷️ Prefill 请求专属请求头: X-Request-Id=%s, X-KV-Target=%s",
             req_tag,
             headers.get("X-Request-Id"),
             headers.get("X-KV-Target"),
         )
+        # [Req-61902d02] 🏷️ Prefill 请求专属请求头: X-Request-Id=___prefill_addr_172.16.21.3:14579___decode_addr_172.16.21.3:14580_94e2e68b7d754182b658f91f07918ece, X-KV-Target=127.0.0.1:8200
 
         try:
             prefill_timeout = aiohttp.ClientTimeout(total=180)
@@ -247,10 +277,14 @@ def main():
                 "[%s] 🌐 正在初始化 Prefill HTTP ClientSession (Timeout=180s)...",
                 req_tag,
             )
+            # [Req-61902d02] 🌐 正在初始化 Prefill HTTP ClientSession (Timeout=180s)...
+
             async with aiohttp.ClientSession(timeout=prefill_timeout) as session:
                 logger.debug(
                     "[%s] 📤 正在向 Prefill 节点推送 HTTP POST 数据包...", req_tag
                 )
+                # [Req-61902d02] 📤 正在向 Prefill 节点推送 HTTP POST 数据包...
+
                 async with session.post(url=url, json=payload, headers=headers) as resp:
                     resp_status = resp.status
                     logger.debug(
@@ -258,6 +292,7 @@ def main():
                         req_tag,
                         resp_status,
                     )
+                    # [Req-61902d02] 📥 Prefill 节点返回 HTTP 响应状态码: 200
 
                     if resp_status != 200:
                         err_text = await resp.text()
@@ -273,6 +308,8 @@ def main():
                         "[%s] ⏳ 开始读取 Prefill 完整响应体以确认 KV Cache 推送完毕...",
                         req_tag,
                     )
+                    # [Req-61902d02] ⏳ 开始读取 Prefill 完整响应体以确认 KV Cache 推送完毕...
+
                     body_bytes = await resp.read()
                     elapsed = time.perf_counter() - start_ts
                     logger.info(
@@ -281,6 +318,8 @@ def main():
                         elapsed,
                         len(body_bytes),
                     )
+                    # [Req-61902d02] ⬅️ [Prefill 完成] 耗时: 2.746 秒, 响应体大小: 662 字节, KV 已推送至 Decode
+
         except asyncio.TimeoutError:
             logger.error(
                 "[%s] ❌ [Prefill 超时] 请求耗时超过 180 秒硬超时限制, 可能卡在 NCCL 发送环路中",
@@ -314,6 +353,8 @@ def main():
             req_tag,
             url,
         )
+        # [Req-61902d02] ➡️ [Decode 接入] 发送至 Decode 节点等待 KV 并流式生成: http://127.0.0.1:8200/v1/chat/completions
+
         logger.debug(
             "[%s] 📦 Decode 原始参数摘要: max_tokens=%s, stream=%s, model=%s",
             req_tag,
@@ -321,11 +362,14 @@ def main():
             payload.get("stream"),
             payload.get("model"),
         )
+        # [Req-61902d02] 📦 Decode 原始参数摘要: max_tokens=100, stream=True, model=/model/gemma-4-31B-it
+
         logger.debug(
             "[%s] 🏷️ Decode 请求携带的 X-Request-Id: %s",
             req_tag,
             headers.get("X-Request-Id"),
         )
+        # [Req-61902d02] 🏷️ Decode 请求携带的 X-Request-Id: ___prefill_addr_172.16.21.3:14579___decode_addr_172.16.21.3:14580_94e2e68b7d754182b658f91f07918ece
 
         try:
             logger.debug(
@@ -333,10 +377,14 @@ def main():
                 req_tag,
                 args.timeout,
             )
+            # [Req-61902d02] 🌐 正在初始化 Decode HTTP ClientSession (Timeout=3600.0s)...
+
             async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
                 logger.debug(
                     "[%s] 📤 正在向 Decode 节点发起 HTTP POST 请求...", req_tag
                 )
+                # [Req-61902d02] 📤 正在向 Decode 节点发起 HTTP POST 请求...
+
                 async with session.post(url=url, json=payload, headers=headers) as resp:
                     resp_status = resp.status
                     resp_content_type = resp.headers.get("Content-Type", "unknown")
@@ -346,6 +394,7 @@ def main():
                         resp_status,
                         resp_content_type,
                     )
+                    # [Req-61902d02] 📥 Decode 节点已响应: HTTP 200, Content-Type: text/event-stream; charset=utf-8
 
                     if resp_status != 200:
                         err_text = await resp.text()
@@ -363,6 +412,7 @@ def main():
                     logger.info(
                         "[%s] 🔄 [Decode 连接建立] 开始以流式方式接收 Token...", req_tag
                     )
+                    # [Req-61902d02] 🔄 [Decode 连接建立] 开始以流式方式接收 Token...
 
                     async for chunk in resp.content.iter_chunked(1024):
                         if not chunk:
@@ -379,6 +429,8 @@ def main():
                                 ttft,
                                 len(chunk),
                             )
+                            # [Req-61902d02] ⚡ [首 Token 产生] TTFT (首字延迟): 2.691 秒, 首块大小: 651 字节
+
                         else:
                             logger.debug(
                                 "[%s] 📦 接收 Token 流数据块 #%d, 大小: %d 字节",
@@ -386,6 +438,11 @@ def main():
                                 chunk_count + 1,
                                 len(chunk),
                             )
+                            # [Req-61902d02] 📦 接收 Token 流数据块 #2, 大小: 317 字节
+                            # [Req-61902d02] 📦 接收 Token 流数据块 #3, 大小: 317 字节
+                            # ...
+                            # [Req-61902d02] 📦 接收 Token 流数据块 #34, 大小: 314 字节
+                            # [Req-61902d02] 📦 接收 Token 流数据块 #35, 大小: 345 字节
 
                         chunk_count += 1
                         total_bytes += len(chunk)
@@ -404,6 +461,7 @@ def main():
                             else 0.0
                         ),
                     )
+                    # [Req-61902d02] ⬅️ [Decode 传输结束] 成功! 总耗时: 4.082 秒, 数据块: 35, 大小: 11.16 KB, 平均速率: 2.73 KB/s
 
         except asyncio.TimeoutError:
             logger.error(
@@ -433,6 +491,7 @@ def main():
         logger.debug(
             "[%s] 🔍 开始捕获客户端请求元数据: %s %s", req_tag, req_method, req_path
         )
+        # [Req-61902d02] 🔍 开始捕获客户端请求元数据: POST /v1/chat/completions
 
         try:
             original_request_data = await request.get_json()
@@ -469,11 +528,14 @@ def main():
             temperature,
             prompt_preview,
         )
+        # [Req-61902d02] 📥 接收请求 -> 路由: /v1/chat/completions, 模型: /model/gemma-4-31B-it, max_tokens: 100, stream: True, temperature: 0.7, 提示摘要: [Messages(count=1)]
 
         # 步骤 1: 构造 Prefill 专属请求体
         logger.debug(
             "[%s] 🛠️ [步骤 1/3] 开始克隆并改写 Prefill 专属 Payload...", req_tag
         )
+        # [Req-61902d02] 🛠️ [步骤 1/3] 开始克隆并改写 Prefill 专属 Payload...
+
         prefill_request = original_request_data.copy()
         prefill_request["max_tokens"] = 1
         if "max_completion_tokens" in prefill_request:
@@ -483,11 +545,14 @@ def main():
         logger.debug(
             "[%s] 强制将 Prefill 的 stream 参数重写为 False (禁止 SSE 悬挂)", req_tag
         )
+        # [Req-61902d02] 强制将 Prefill 的 stream 参数重写为 False (禁止 SSE 悬挂)
 
         # 步骤 2: 构造底层 NCCL 拓扑寻址 Request-ID
         logger.debug(
             "[%s] 🛠️ [步骤 2/3] 正在构造 NCCL P2P 物理寻址 Request-ID...", req_tag
         )
+        # [Req-61902d02] 🛠️ [步骤 2/3] 正在构造 NCCL P2P 物理寻址 Request-ID...
+
         unique_token = uuid.uuid4().hex
         full_request_id = (
             f"___prefill_addr_{PREFILL_KV_ADDR}___decode_addr_"
@@ -495,30 +560,40 @@ def main():
         )
         headers = _build_headers(full_request_id)
         logger.debug("[%s] 🔑 生成的 P2P 寻址 Request-ID: %s", req_tag, full_request_id)
+        # [Req-61902d02] 🔑 生成的 P2P 寻址 Request-ID: ___prefill_addr_172.16.21.3:14579___decode_addr_172.16.21.3:14580_94e2e68b7d754182b658f91f07918ece
 
         # 步骤 3: 激活并发流水线
         logger.info("[%s] 🚀 [阶段 1] 激活 Prefill 节点计算与 KV 传输...", req_tag)
+        # [Req-61902d02] 🚀 [阶段 1] 激活 Prefill 节点计算与 KV 传输...
+
         prefill_task = asyncio.create_task(
             _run_prefill_task(req_path, prefill_request, headers, req_tag)
         )
         logger.debug(
             "[%s] 协程任务已放入 asyncio 事件循环: TaskID=%s", req_tag, id(prefill_task)
         )
+        # [Req-61902d02] 协程任务已放入 asyncio 事件循环: TaskID=139788933630272
 
         logger.debug(
             "[%s] ⏱️ 正在执行微时差让步 (sleep 0.05s) 以确保 Prefill ZMQ 服务端完成广播...",
             req_tag,
         )
+        # [Req-61902d02] ⏱️ 正在执行微时差让步 (sleep 0.05s) 以确保 Prefill ZMQ 服务端完成广播...
+
         await asyncio.sleep(0.05)
         logger.debug("[%s] ⏱️ 微时差让步结束, 开始激活 Decode 阶段", req_tag)
+        # [Req-61902d02] ⏱️ 微时差让步结束, 开始激活 Decode 阶段
 
         logger.info("[%s] 🚀 [阶段 2] 接入 Decode 节点管道...", req_tag)
+        # [Req-61902d02] 🚀 [阶段 2] 接入 Decode 节点管道...
 
         async def response_stream():
             logger.debug(
                 "[%s] 🌊 客户端响应流开始消费 (response_stream iterator activated)",
                 req_tag,
             )
+            # [Req-61902d02] 🌊 客户端响应流开始消费 (response_stream iterator activated)
+
             try:
                 async for chunk in _stream_decode(
                     req_path, original_request_data, headers, req_tag
@@ -554,13 +629,17 @@ def main():
                         "[%s] ✅ 响应流结束, Prefill 任务已正常完毕 (Task Status: Done)",
                         req_tag,
                     )
+                    # [Req-61902d02] ✅ 响应流结束, Prefill 任务已正常完毕 (Task Status: Done)
 
         logger.debug("[%s] 📦 正在封装 Quart Streaming Response...", req_tag)
+        # [Req-61902d02] 📦 正在封装 Quart Streaming Response...
+
         response = await make_response(response_stream())
         response.timeout = None
         logger.debug(
             "[%s] 🛡️ 已禁用 Quart Response Timeout (response.timeout=None)", req_tag
         )
+        # [Req-61902d02] 🛡️ 已禁用 Quart Response Timeout (response.timeout=None)
 
         elapsed_setup = time.perf_counter() - request_start_time
         logger.info(
@@ -568,6 +647,8 @@ def main():
             req_tag,
             elapsed_setup,
         )
+        # [Req-61902d02] 🔗 双向流水线就绪 (调度层握手耗时: 0.053 秒)
+
         return response
 
     # 路由注册与服务透传
@@ -576,6 +657,8 @@ def main():
     async def handle_request():
         req_start = time.perf_counter()
         logger.debug("🌐 [HTTP 入口] 收到路由命中: %s %s", request.method, request.path)
+        # 🌐 [HTTP 入口] 收到路由命中: POST /v1/chat/completions
+
         try:
             resp = await process_request()
             logger.debug(
@@ -584,7 +667,9 @@ def main():
                 request.path,
                 time.perf_counter() - req_start,
             )
+            # 🌐 [HTTP 出口] 成功生成响应对象: POST /v1/chat/completions (耗时: 0.053s)
             return resp
+
         except asyncio.CancelledError:
             logger.warning(
                 "⚠️ 客户端主动中断连接 (Request Cancelled by Client): %s", request.path
@@ -625,6 +710,7 @@ def main():
 
     # 启动 ASGI 服务
     logger.info("🎬 Quart ASGI 服务已进入事件循环, 监听端口 %d...", args.port)
+    # 🎬 Quart ASGI 服务已进入事件循环, 监听端口 8000...
     app.run(host=args.host, port=args.port)
 
 
